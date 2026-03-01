@@ -1,6 +1,7 @@
 import numpy as np
 import mpmath as mp
-import math
+import sys
+import argparse
 
 mp.mp.dps = 10  #set the precision for the code
 
@@ -138,5 +139,63 @@ def calculate_deltaTPrime(t):
             deltaTPrime += mp.quad(lambda x: mp.mpf('1') / (2*c) * a_i * a_j * get_metricTensorcomponentTT(distance(x), t + (L - x) / c)[i][j], [mp.mpf('0'), L])
     return deltaTPrime
 
-t = float(input("current time:"))
-print(calculate_deltaT(t), calculate_deltaTPrime(t))
+def parse_arguments():
+    """
+    Returns:
+        argparse.Namespace
+    """
+    parser = argparse.ArgumentParser(
+        epilog='example: python metricCalculate.py time data.txt'
+    )
+    
+    parser.add_argument(
+        '-t', '--time',
+        type=str,
+        required=True,
+        help='current time'
+    )
+    
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='show detailed output'
+    )
+    
+    parser.add_argument(
+        '-o', '--output',
+        type=str,
+        default=None,
+        help='path for the output file'
+    )
+    
+    return parser.parse_args()
+
+def main(t = float):
+
+    delay_of_transition_time = calculate_deltaT(t - 2 * L / c) + calculate_deltaTPrime(t - L / c)
+    input_signal = delay_of_transition_time * c / (2 * L)
+
+    return(input_signal)
+
+
+if __name__ == "__main__":
+
+    args = parse_arguments()
+
+    if args.verbose:
+        print(f"begin processing, current time: {args.time}")
+        if args.output:
+            print(f"output file: {args.output}")
+    
+    time = float(args.time)
+    result = main(time)
+    print(result)
+    if args.output:
+        try:
+            with open(args.output, 'w') as f:
+                f.write(str(result))
+            print(f"\nresult saved at: {args.output}")
+        except Exception as e:
+            print(f"error while saving file: {e}")
+    
+    sys.exit(0)
