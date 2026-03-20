@@ -2,9 +2,12 @@ import gwinc
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import simpson
+from fourier import main
 
 def calculate_snr():
     budget = gwinc.load_budget('aLIGO')
+    
+    main()
     signal_magnitude = np.load("magnitude.npy")
     freq = np.load("freqs.npy")
 
@@ -35,9 +38,4 @@ def plot(freq, trace):
     plt.xlim(1, 1000)
     plt.savefig("./Noise.png")
 
-def main():
-    freq, trace = calculate_snr()
-    # plot(freq,trace)
-
-if __name__ == "__main__":
-    main()
+calculate_snr()

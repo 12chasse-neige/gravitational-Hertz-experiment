@@ -207,7 +207,7 @@ def parse_arguments():
     
     return parser.parse_args()
 
-def main(t = float, theta_arm  = float, phi_arm = float, theta_det = float, phi_det = float):
+def main(t = float, theta_arm  = 1.6882, phi_arm = 0.7850, theta_det = 0.0000, phi_det = 1.1981):
 
     a_i, a_j, a_k = sin(theta_arm) * cos(phi_arm), sin(theta_arm) * sin(phi_arm), cos(theta_arm)
     n_i, n_j, n_k = sin(theta_det) * cos(phi_det), sin(theta_det) * sin(phi_det), cos(theta_det)

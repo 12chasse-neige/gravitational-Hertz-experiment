@@ -14,13 +14,13 @@ from metricCalculate import main
 h_values = [main(ti) for ti in t]
 h_values = np.array(h_values)
 
-# plt.figure(figsize=(10, 6))
+plt.figure(figsize=(10, 6))
 
-# plt.plot(t, h_values)
-# plt.xlabel('Time [s]')
-# plt.ylabel('Signal [1]')
-# plt.title('Input Signal Curve')
-# plt.savefig("./Signal.png")
+plt.plot(t, h_values)
+plt.xlabel('Time [s]')
+plt.ylabel('Signal [1]')
+plt.title('Input Signal Curve')
+plt.savefig("./Signal.png")
 
 def fourier(signal, sampling_rate = num / time):
     """

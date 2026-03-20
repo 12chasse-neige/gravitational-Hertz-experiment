@@ -8,10 +8,12 @@ period = 2 * np.pi / frequency
 def get_the_signal_amplitude(theta_arm, phi_arm, theta_det, phi_det):
     sampling = 100
     time_interval = period / sampling
-    total_amplitude = 0
+    amplitude = 0
     for i in range(sampling):
-        total_amplitude += main(i * time_interval, theta_arm, phi_arm, theta_det, phi_det) ** 2
-    amplitude = np.sqrt(total_amplitude / sampling)
+        val = main(i * time_interval, theta_arm, phi_arm, theta_det, phi_det) ** 2
+        if val > amplitude:
+            amplitude = val
+    amplitude = np.sqrt(amplitude)
     return amplitude
 
 def spherical_function(theta_arm, phi_arm, theta_det, phi_det):
