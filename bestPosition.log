@@ -1,5 +1,5 @@
-Initial Guess: theta arm = 1.0000, phi arm = 1.0000, theta detector = 1.0000, phi detector = 1.0000
+Initial Guess: theta arm 1 = 1.5708, phi arm 1 = 0.0000, theta arm 2 = 1.5708, phi arm 2 = 1.5708, theta detector = 1.0000, phi detector = 1.0000
 --------------------------------------------------
 SciPy Optimization Results:
-Location: theta arm = 1.6876, phi arm = 0.7854, theta det = 0.0000, phi det = 1.3225
-Max Value: 3.538732e-37
+Location: theta arm 1 = 1.5708, phi arm 1 = 0.1685, theta arm 2 = 3.1416, phi arm 2 = 1.8930, theta det = 1.2806, phi det = 2.0882
+Max Value: 8.539134e-37

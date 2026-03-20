@@ -7,19 +7,26 @@ from fourier import main
 def calculate_snr():
     budget = gwinc.load_budget('aLIGO')
     
-    main()
+    # main()
     signal_magnitude = np.load("magnitude.npy")
     freq = np.load("freqs.npy")
 
-    trace = budget.run(freq=freq)
-    total_noise_psd = trace.psd # getting the amplitude spectral density of the noise
+    valid_mask = (freq >= 1.0) & (freq <= 5000.0)
+    freq_valid = freq[valid_mask]
+    signal_magnitude_valid = signal_magnitude[valid_mask]
+
+    trace = budget.run(freq=freq_valid)
+    total_noise_psd = trace.psd 
     
-    integrand = 4 * signal_magnitude**2 / (total_noise_psd)
-    total = simpson(signal_magnitude,freq)
-    print(total)
-    snr = np.sqrt(simpson(integrand, freq))
-    print(snr)
-    return freq, trace
+    integrand = 4 * signal_magnitude_valid**2 / total_noise_psd
+    
+    df = freq_valid[1] - freq_valid[0]
+    
+    snr = np.sqrt(np.sum(integrand) * df)
+    
+    print(f"  Calculated SNR (1 second) = {snr:.4e}")
+    
+    return freq_valid, trace
 
 def plot(freq, trace):
     plt.figure(figsize=(10, 6))
@@ -35,7 +42,8 @@ def plot(freq, trace):
     plt.ylabel('Strain Noise [1/sqrt(Hz)]')
     plt.title('Advanced LIGO Noise Budget')
     plt.legend(loc='upper right', fontsize='small')
-    plt.xlim(1, 1000)
+    plt.xlim(200, 1000)
     plt.savefig("./Noise.png")
 
-calculate_snr()
+freq, trace = calculate_snr()
+plot(freq, trace)

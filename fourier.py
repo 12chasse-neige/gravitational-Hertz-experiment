@@ -3,15 +3,15 @@ import matplotlib.pyplot as plt
 from scipy.fft import rfft, rfftfreq
 from scipy.signal.windows import tukey
 
-time = 0.01
+time = 1
 num = int(120000 * time)
 
 t = np.linspace(0, time, num, endpoint=False)
 # demo = np.sin(2 * np.pi * 600 * t)
 
-from metricCalculate import main
+from metricCalculate import calculate_metric_response
 
-h_values = [main(ti) for ti in t]
+h_values = [calculate_metric_response(ti) for ti in t]
 h_values = np.array(h_values)
 
 plt.figure(figsize=(10, 6))
@@ -30,7 +30,6 @@ def fourier(signal, sampling_rate = num / time):
     dt = 1.0 / sampling_rate
 
     # window = tukey(N, alpha=0.1) 
-
     # signal_windowed = signal * window
     
     fft_complex = rfft(signal)
@@ -47,7 +46,7 @@ def fourier(signal, sampling_rate = num / time):
     return signal, positive_magnitude, positive_freqs
 
 def plot(inputSignal, fft_magnitude, freqs):
-    fig, axes = plt.subplots(1, 2, figsize=(12, 8))
+    _, axes = plt.subplots(1, 2, figsize=(12, 8))
 
     axes[0].plot(t, inputSignal)
     axes[0].set_title('Original Signal')

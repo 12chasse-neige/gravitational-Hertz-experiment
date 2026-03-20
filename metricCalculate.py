@@ -1,246 +1,241 @@
 import numpy as np
-import mpmath as mp
+from scipy.integrate import quad
 import sys
 import argparse
+from dataclasses import dataclass
+from typing import Tuple
 
-mp.mp.dps = 10  #set the precision for the code
-
-#define the contants that will be used
-H = mp.mpf('2')      # height of the column (meter)
-D = mp.mpf('5')      # diameter of the column (meter)
-d = mp.mpf('1')      # diameter of the holes (meter)
-s = mp.mpf('1.5')    # distance from center to holes (meter)
-R = mp.mpf('2000')   # distance from source to detector (meter)
-rho = mp.mpf('1750') # density (kg/m^3)
-G = mp.mpf('6.674e-11')  # gravitational constant
-c = mp.mpf('2.998e8')    # speed of light
-pi = mp.pi
-omega = mp.mpf('300') * mp.mpf('2') * pi  # rotation frequency
-sin = mp.sin
-cos = mp.cos
-def dirac_delta(i, j):
+@dataclass
+class ExperimentConfig:
     """
-    dirac delta function
-    """    
-    if i==j:
-        return mp.mpf('1')
-    else:
-        return mp.mpf('0')    
+    Dataclass to store all physical constants and experiment parameters.
+    Converted to standard Python floats for fast NumPy calculations.
+    """
+    num: int = 2               # number of the holes in the column
+    H: float = 2.0             # height of the column (meter)
+    D: float = 5.0             # diameter of the column (meter)
+    d: float = 1.0             # diameter of the holes (meter)
+    s: float = 1.5             # distance from center to holes (meter)
+    R: float = 2000.0          # distance from source to detector (meter)
+    rho: float = 1750.0        # density (kg/m^3)
+    G: float = 6.674e-11       # gravitational constant
+    c: float = 2.998e8         # speed of light
+    omega: float = 300.0 * 2.0 * np.pi  # rotation frequency (rad/s)
+    L: float = 1000.0          # length of the arm of the detector (meter)
+
+
+def get_hole_coordinate(k: int, t: float, config: ExperimentConfig) -> Tuple[float, float]:
+    """
+    Get the x and y coordinates of the k-th hole at time t.
+    """
+    x_k = config.s * np.cos(config.omega * t + k * (2 * np.pi / config.num)) 
+    y_k = config.s * np.sin(config.omega * t + k * (2 * np.pi / config.num))
+    return x_k, y_k
+
+
+def calculate_whole_tensor(t: float, config: ExperimentConfig) -> np.ndarray:
+    """
+    Calculate the whole quadrupole tensor I_ij for the source using NumPy matrices.
+    This avoids component-by-component calculation and builds the 3x3 matrix directly.
+    """
+    tensor = np.zeros((3, 3))
+    volume = np.pi * config.d**2 / 4.0 * config.H
+    mass = -config.rho * volume  # Using negative density for the holes
+    
+    # Add up the contributions of the 2 holes
+    for k in range(config.num):
+        x, y = get_hole_coordinate(k, t, config)
+        coords = np.array([x, y, 0.0])
+        r_squared = x**2 + y**2
         
-def get_metricTensorcomponentTT(r, t):
-    """
-    describe the rotation of the columns: we assume that at the time t=0, the center of one hole is at the direction of the x axis, and the center of the four holes are defined by x_k and y_k (k = 0,1)
-    """
-    def get_the_coordinate_of_the_hole(k, t):
-        x_k = s * cos(omega * t + k * pi) 
-        y_k = s * sin(omega * t + k * pi)
-        return x_k, y_k
-
-    #calculate the components of the quadrupole tensor
-    #calculate the ij componet of the quadrupole tensor of one column
-    # def calculate_one_column_tensor(i, j, D, rho, H):
-    #     def y_lower(x):
-    #         return -np.sqrt(D**2/4 - x**2)
-    #     def y_upper(x):
-    #         return np.sqrt(D**2/4 - x**2)
-    #     x_lower = -D/2
-    #     x_upper = D/2
-    #     z_lower = -H/2
-    #     z_upper = H/2
-    #     def integrand(x, y, z):
-    #         coordinates = [x, y, z]
-    #         return rho * (coordinates[i] * coordinates[j] - mp.mpf('1')/3 * dirac_delta(i, j) * (x**2 + y**2 + z**2))
+        # I_ij = mass * (x_i * x_j - 1/3 * delta_ij * r^2)
+        # np.outer creates the x_i * x_j matrix; np.eye(3) is the identity matrix (delta_ij)
+        tensor += mass * (np.outer(coords, coords) - (1.0 / 3.0) * np.eye(3) * r_squared)
         
-    #     def f(x):
-    #         def g(y):
-    #             def h(z):
-    #                 return integrand(x, y, z)
-    #             return mp.quad(h, [z_lower, z_upper])
-    #         return mp.quad(g, [y_lower(x), y_upper(x)])
-        
-    #     component = mp.quad(f, [x_lower, x_upper])
-    #     return component
+    return tensor
 
-    def hole_tensor_component(i, j, k, d, rho ,H ,t):
-        """
-        calculate the componets of quadrupole tensor of the holes relative to the center of the column
-        """
-        component = mp.mpf('0')
-        x = get_the_coordinate_of_the_hole(k, t)[0]
-        y = get_the_coordinate_of_the_hole(k, t)[1]
-        z = mp.mpf('0')
-        def relative_component(i, j, t):
-            coordinates = [x, y, z]
-            relativeComponent = rho * pi * d**2 / 4 * H * (coordinates[i] * coordinates[j] - mp.mpf('1')/3 * dirac_delta(i, j) * (x**2 + y**2 + z**2))
-            return relativeComponent
-        component += relative_component(i, j, t)
-        return component
 
-    def calculate_the_whole_tensor(i, j, D, rho, H, t):
-        """
-        adding to get the whole quadrupole tensor I_ij
-        """
-        big_column = mp.mpf('0')
-        component = big_column
-        for k in range(2):
-            small_column = hole_tensor_component(i, j, k, d, -rho, H, t)
-            component += small_column
-        return component
-
-    def second_derivative_of_component(i, j, t):
-        """
-        calculate the second-order derivative of the quadrupole tensor
-        """
-        if i==2 or j==2:
-            return mp.mpf('0')
-        else:
-            derivative = - mp.mpf('4') * omega ** 2 * calculate_the_whole_tensor(i, j, D, rho, H, t)
-            return derivative
-
-    #get the final metric tensor
-    t_rev = t - r/c
-    metricTensorComponent = [[mp.mpf('0') for _ in range(3)] for _ in range(3)]
-    for i in range(3):
-        for j in range(3):
-            metricTensorComponent[i][j] = mp.mpf('2') * G * second_derivative_of_component(i, j, t_rev) / (r * c**4)
-
-    def project_to_TT_mode(metricTensorComponent):
-        """
-        project the mectric tensor to TT mode
-        """
-        projector = [[mp.mpf('1'), mp.mpf('0'), mp.mpf('0')],
-                    [mp.mpf('0'), mp.mpf('1'), mp.mpf('0')],
-                    [mp.mpf('0'), mp.mpf('0'), mp.mpf('0')]]
-        metricTensorComponentTT = [[mp.mpf('0') for _ in range(3)] for _ in range(3)]
-        for i in range(3):
-            for j in range(3):
-                for k in range(3):
-                    for l in range(3):
-                        metricTensorComponentTT[i][j] += (projector[i][k] * projector[j][l] - mp.mpf('0.5') * projector[i][j] * projector[k][l]) * metricTensorComponent[k][l]
-        return metricTensorComponentTT
-
-    #output the metric tensor in TT gauge
-    metricTensorComponentTT = project_to_TT_mode(metricTensorComponent)
-    return metricTensorComponentTT
-
-#calculate the average respond for monochromatic wave
-#define the orientation of the detector
-# theta_arm = pi / 2
-# phi_arm = pi / 4    #the orientation of one arm of the detector (rad)
-# theta_det = mp.mpf('1.57079')
-# phi_det = mp.mpf('0.79')   #the orientation of the vector from the centor of the source to the center of the detector
-
-def calculate_deltaT(t, n_i, n_j, n_k, a_i, a_j, a_k, L):
-    deltaT = mp.mpf('0')
-    def distance(x):    #return the distance from the center of the source to the position of the photon
-        return mp.sqrt((R * n_i + x * a_i)**2 + (R * n_j + x * a_j)**2 + (R * n_k + x * a_k)**2)
-    for i in range(3):
-        for j in range(3):
-            deltaT += mp.quad(lambda x: mp.mpf('1') / (2*c) * a_i * a_j * get_metricTensorcomponentTT(distance(x), t + x / c)[i][j], [mp.mpf('0'), L])
-    return deltaT
-
-def calculate_deltaTPrime(t, n_i, n_j, n_k, a_i, a_j, a_k, L):
-    deltaTPrime = mp.mpf('0')
-    def distance(x):    #return the distance from the center of the source to the position of the photon
-        return mp.sqrt((R * n_i + x * a_i)**2 + (R * n_j + x * a_j)**2 + (R * n_k + x * a_k)**2)
-    for i in range(3):
-        for j in range(3):
-            deltaTPrime += mp.quad(lambda x: mp.mpf('1') / (2*c) * a_i * a_j * get_metricTensorcomponentTT(distance(x), t + (L - x) / c)[i][j], [mp.mpf('0'), L])
-    return deltaTPrime
-
-def parse_arguments():
+def second_derivative_of_tensor(t: float, config: ExperimentConfig) -> np.ndarray:
     """
-    Returns:
-        argparse.Namespace
+    Calculate the second-order derivative of the quadrupole tensor.
+    """
+    tensor = calculate_whole_tensor(t, config)
+    # Since the coordinates have a simple harmonic dependence on omega*t, 
+    # the 2nd time derivative is simply multiplying by -4 * omega^2
+    return -4.0 * config.omega**2 * tensor
+
+
+def get_metric_tensor(r: float, t: float, config: ExperimentConfig) -> np.ndarray:
+    """
+    Calculate the raw metric tensor h_ij before TT gauge projection.
+    """
+    t_rev = t - r / config.c
+    coeff = 2.0 * config.G / (r * config.c**4)
+    return coeff * second_derivative_of_tensor(t_rev, config)
+
+
+# def project_to_tt_gauge_static(h_matrix: np.ndarray) -> np.ndarray:
+#     """
+#     Project the metric tensor to TT gauge using a fixed z-axis propagation assumption.
+#     """
+#     P = np.array([[1.0, 0.0, 0.0],[0.0, 1.0, 0.0],[0.0, 0.0, 0.0]])
+                  
+#     # Tr(P * h) = sum_{k,l} P_kl h_kl
+#     trace_term = np.sum(P * h_matrix) 
+    
+#     # h_tt_ij = (P h P^T)_ij - 0.5 * P_ij * Tr(P h)
+#     h_tt = P @ h_matrix @ P.T - 0.5 * P * trace_term
+#     return h_tt
+
+
+def project_to_tt_gauge_dynamic(h_matrix: np.ndarray, r_vec: np.ndarray) -> np.ndarray:
+    """
+    Project the metric tensor to TT gauge using local propagation direction.
+    """
+    r_norm = np.linalg.norm(r_vec)
+    k = r_vec / r_norm  # Local propagation unit vector
+    
+    # Projection operator perpendicular to the propagation vector k
+    P = np.eye(3) - np.outer(k, k)
+    
+    trace_term = np.sum(P * h_matrix)
+    h_tt = P @ h_matrix @ P.T - 0.5 * P * trace_term
+    return h_tt
+
+
+def calculate_delta_t(t: float, n_vec: np.ndarray, a_vec: np.ndarray, config: ExperimentConfig) -> float:
+    """
+    Calculate the forward photon transition time delay.
+    """
+    def integrand(x):
+        r_vec = config.R * n_vec + x * a_vec
+        r_distance = np.linalg.norm(r_vec)
+        
+        h_matrix = get_metric_tensor(r_distance, t + x / config.c, config)
+        
+        h_tt = project_to_tt_gauge_dynamic(h_matrix, r_vec)
+        
+        # Calculate a_i * a_j * h_tt_ij using dot products
+        val = a_vec.T @ h_tt @ a_vec
+        return val / (2.0 * config.c)
+        
+    # scipy.integrate.quad returns a tuple (integral_result, absolute_error)
+    result, _ = quad(integrand, 0.0, config.L)
+    return result
+
+
+def calculate_delta_t_prime(t: float, n_vec: np.ndarray, a_vec: np.ndarray, config: ExperimentConfig) -> float:
+    """
+    Calculate the return photon transition time delay.
+    """
+    def integrand(x):
+        r_vec = config.R * n_vec + x * a_vec
+        r_distance = np.linalg.norm(r_vec)
+        
+        h_matrix = get_metric_tensor(r_distance, t + (config.L - x) / config.c, config)
+        
+        h_tt = project_to_tt_gauge_dynamic(h_matrix, r_vec) 
+        
+        val = a_vec.T @ h_tt @ a_vec
+        return val / (2.0 * config.c)
+        
+    result, _ = quad(integrand, 0.0, config.L)
+    return result
+
+
+def calculate_metric_response(t: float, 
+                              theta_arm1: float = 1.5708, 
+                              phi_arm1: float = 0.1685, 
+                              theta_arm2: float = 3.1416,
+                              phi_arm2: float = 1.8930,
+                              theta_det: float = 1.2806, 
+                              phi_det: float = 2.0882) -> float:
+    """
+    Main entry function to compute the signal response at a given time.
+    Calculates the relative transition time delay of the two arms.
+    """
+    config = ExperimentConfig()
+    
+    # Calculate orientation vectors using NumPy arrays
+    a_vec = np.array([np.sin(theta_arm1) * np.cos(phi_arm1), 
+                      np.sin(theta_arm1) * np.sin(phi_arm1), 
+                      np.cos(theta_arm1)])
+    
+    b_vec = np.array([np.sin(theta_arm2) * np.cos(phi_arm2), 
+                      np.sin(theta_arm2) * np.sin(phi_arm2), 
+                      np.cos(theta_arm2)])
+             
+    n_vec = np.array([np.sin(theta_det) * np.cos(phi_det), 
+                      np.sin(theta_det) * np.sin(phi_det), 
+                      np.cos(theta_det)])
+
+    t_forward = t - 2.0 * config.L / config.c
+    t_return = t - config.L / config.c
+
+    delta_t1 = calculate_delta_t(t_forward, n_vec, a_vec, config)
+    delta_t_prime1 = calculate_delta_t_prime(t_return, n_vec, a_vec, config)
+    delay_of_transition_time1 = delta_t1 + delta_t_prime1
+
+    delta_t2 = calculate_delta_t(t_forward, n_vec, b_vec, config)
+    delta_t_prime2 = calculate_delta_t_prime(t_return, n_vec, b_vec, config)
+    delay_of_transition_time2 = delta_t2 + delta_t_prime2
+
+    delay_of_transition_time_delta = delay_of_transition_time1 - delay_of_transition_time2
+    input_signal = delay_of_transition_time_delta * config.c / (2.0 * config.L)
+
+    return float(input_signal)
+
+# Alias to maintain backward compatibility for `from metricCalculate import main` in fourier.py
+main = calculate_metric_response
+
+
+def parse_arguments() -> argparse.Namespace:
+    """
+    Parse command line arguments.
     """
     parser = argparse.ArgumentParser(
-        epilog='example: python metricCalculate.py time theta_arm phi_arm theta_det phi_det data.txt'
+        epilog='example: python metricCalculate.py -t 0.01 -ta 1.6882 -pa 0.7850 -td 0.0000 -pd 1.1981'
     )
     
-    parser.add_argument(
-        '-t', '--time',
-        type=str,
-        required=True,
-        help='current time'
-    )
-
-    parser.add_argument(
-        '-ta', '--thetaarm',
-        type=str,
-        required=True,
-        help='position angle of the detector arm'
-    )
-
-    parser.add_argument(
-        '-pa', '--phiarm',
-        type=str,
-        required=True,
-        help='position angle of the detector arm'
-    )
-
-    parser.add_argument(
-        '-td', '--thetadetector',
-        type=str,
-        required=True,
-        help='position angle of the detector'
-    )
-
-    parser.add_argument(
-        '-pd', '--phidetector',
-        type=str,
-        required=True,
-        help='position angle of the detector'
-    )
-
-    parser.add_argument(
-        '-v', '--verbose',
-        action='store_true',
-        help='show detailed output'
-    )
-    
-    parser.add_argument(
-        '-o', '--output',
-        type=str,
-        default=None,
-        help='path for the output file'
-    )
+    parser.add_argument('-t', '--time', type=str, required=True, help='current time in seconds')
+    parser.add_argument('-ta1', '--thetaarm1', type=str, required=True, help='polar angle of the detector arm 1')
+    parser.add_argument('-pa1', '--phiarm1', type=str, required=True, help='azimuthal angle of the detector arm 1')
+    parser.add_argument('-ta2', '--thetaarm2', type=str, required=True, help='polar angle of the detector arm 2')
+    parser.add_argument('-pa2', '--phiarm2', type=str, required=True, help='azimuthal angle of the detector arm 2')
+    parser.add_argument('-td', '--thetadetector', type=str, required=True, help='polar angle of the detector')
+    parser.add_argument('-pd', '--phidetector', type=str, required=True, help='azimuthal angle of the detector')
+    parser.add_argument('-v', '--verbose', action='store_true', help='show detailed output')
+    parser.add_argument('-o', '--output', type=str, default=None, help='path for the output file')
     
     return parser.parse_args()
 
-def main(t = float, theta_arm  = 1.6882, phi_arm = 0.7850, theta_det = 0.0000, phi_det = 1.1981):
-
-    a_i, a_j, a_k = sin(theta_arm) * cos(phi_arm), sin(theta_arm) * sin(phi_arm), cos(theta_arm)
-    n_i, n_j, n_k = sin(theta_det) * cos(phi_det), sin(theta_det) * sin(phi_det), cos(theta_det)
-    L = mp.mpf('1000')    #length of the arm of the detector (meter)
-
-    delay_of_transition_time = calculate_deltaT(t - 2 * L / c, n_i, n_j, n_k, a_i, a_j, a_k, L) + calculate_deltaTPrime(t - L / c, n_i, n_j, n_k, a_i, a_j, a_k, L)
-    input_signal = delay_of_transition_time * c / (2 * L)
-
-    return(input_signal)
-
 
 if __name__ == "__main__":
-
     args = parse_arguments()
 
     if args.verbose:
-        print(f"begin processing, current time: {args.time}")
+        print(f"Begin processing, current time: {args.time} s")
         if args.output:
-            print(f"output file: {args.output}")
+            print(f"Output file: {args.output}")
     
-    time = float(args.time)
-    theta_arm = float(args.thetaarm)
-    phi_arm = float(args.phiarm)
-    theta_det = float(args.thetadetector)
-    phi_det = float(args.phidetector)
-    result = main(time, theta_arm, phi_arm, theta_det, phi_det)
+    time_val = float(args.time)
+    theta_arm1_val = float(args.thetaarm1)
+    phi_arm1_val = float(args.phiarm1)
+    theta_arm2_val = float(args.thetaarm2)
+    phi_arm2_val = float(args.phiarm2)
+    theta_det_val = float(args.thetadetector)
+    phi_det_val = float(args.phidetector)
+    
+    # Execute main calculation
+    result = calculate_metric_response(time_val, theta_arm1_val, phi_arm1_val, theta_arm2_val, phi_arm2_val, theta_det_val, phi_det_val)
     print(result)
+    
     if args.output:
         try:
             with open(args.output, 'w') as f:
                 f.write(str(result))
-            print(f"\nresult saved at: {args.output}")
+            print(f"\nResult saved at: {args.output}")
         except Exception as e:
-            print(f"error while saving file: {e}")
+            print(f"Error while saving file: {e}")
     
     sys.exit(0)
