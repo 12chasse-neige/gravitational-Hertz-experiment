@@ -152,8 +152,17 @@ $$
 \text{SNR} = \frac{S}{\sqrt{\langle N^{2} \rangle}} = \sqrt{4\int_{0}^{\infty} \frac{|h (f)|^{2}}{S_{n \text{(one-sided)}} (f)} \, \mathrm{d} f}
 $$
 
-## Using Gradient Descent to Find the Best Position of the Detector
+## Design Low Quantum Noise Detector for the 600 Hz Wave
 
+The quantum noise for the interferometer is (before squeezing)
+$$
+S^{\text{SQL}}_{h-conv} = \frac{h_{SQL}^{2}}{2} \left(\frac{1}{\kappa} + \kappa\right)
+$$
+where the coupling constant is defined as
+$$
+\kappa (\Omega) = \frac{8 \gamma \omega_{0} P_{0}}{m L c \Omega^{2} (\gamma^{2} + \Omega^{2})}
+$$
+Notice that the laser power $P_{0}$ is the power in the F-P cavities.
 
 [^1]: Sayed Abolfazl Mirdehghan, 1 - Fibrous polymeric composites,
 Editor(s): Masoud Latifi,

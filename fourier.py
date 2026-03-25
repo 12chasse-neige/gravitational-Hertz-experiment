@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 from scipy.fft import rfft, rfftfreq
 from scipy.signal.windows import tukey
 
-time = 1
-num = int(120000 * time)
+int_time = 1
+num = int(120000 * int_time)
 
-t = np.linspace(0, time, num, endpoint=False)
+t = np.linspace(0, int_time, num, endpoint=False)
 # demo = np.sin(2 * np.pi * 600 * t)
 
 from metricCalculate import calculate_metric_response
@@ -20,9 +20,9 @@ plt.plot(t, h_values)
 plt.xlabel('Time [s]')
 plt.ylabel('Signal [1]')
 plt.title('Input Signal Curve')
-plt.savefig("./Signal.png")
+plt.savefig("./Figure/Signal.png")
 
-def fourier(signal, sampling_rate = num / time):
+def fourier(signal, sampling_rate = num / int_time):
     """
     doing fft to the signal with normalization.
     """
@@ -58,12 +58,12 @@ def plot(inputSignal, fft_magnitude, freqs):
     axes[1].set_xlim(1,1000)
 
     plt.tight_layout()
-    plt.savefig("./fourierSignal.png")
+    plt.savefig("./Figure/fourierSignal.png")
 
 def main():
     inputSignal,fft_magnitude,freqs = fourier(h_values)
-    np.save("magnitude.npy", fft_magnitude)
-    np.save("freqs.npy", freqs)
+    np.save("Data/magnitude.npy", fft_magnitude)
+    np.save("Data/freqs.npy", freqs)
     plot(inputSignal, fft_magnitude, freqs)
 
 if __name__ == "__main__":

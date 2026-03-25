@@ -73,7 +73,7 @@ if __name__ == "__main__":
     initial_phi_det = 1
 
     # Open the log file for writing
-    with open("bestPosition.log", "w") as log_file:
+    with open("Data/bestPosition.log", "w") as log_file:
         log_file.write(f"Initial Guess: theta arm 1 = {initial_theta_arm1:.4f}, phi arm 1 = {initial_phi_arm1:.4f}, theta arm 2 = {initial_theta_arm2:.4f}, phi arm 2 = {initial_phi_arm2:.4f}, theta detector = {initial_theta_det:.4f}, phi detector = {initial_phi_det:.4f}\n")
 
         best_theta_arm1, best_phi_arm1, best_theta_arm2, best_phi_arm2, best_theta_det, best_phi_det = scipy_gradient_descent(scaled_spherical_function, initial_theta_arm1, initial_phi_arm1, initial_theta_arm2, initial_phi_arm2, initial_theta_det, initial_phi_det)
