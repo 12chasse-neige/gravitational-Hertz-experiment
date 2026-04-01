@@ -1,27 +1,91 @@
 import numpy as np
+import re
+import os
+from pathlib import Path
 from scipy.integrate import quad
 import sys
 import argparse
-from dataclasses import dataclass
-from typing import Tuple
+from dataclasses import dataclass, field
+from typing import Optional, Tuple
 
 @dataclass
 class ExperimentConfig:
     """
     Dataclass to store all physical constants and experiment parameters.
-    Converted to standard Python floats for fast NumPy calculations.
     """
     num: int = 2               # number of the holes in the column
     H: float = 2.0             # height of the column (meter)
     D: float = 5.0             # diameter of the column (meter)
     d: float = 1.0             # diameter of the holes (meter)
     s: float = 1.5             # distance from center to holes (meter)
-    R: float = 2000.0          # distance from source to detector (meter)
+    R: float = 5000.0          # distance from source to detector (meter)
     rho: float = 1750.0        # density (kg/m^3)
     G: float = 6.674e-11       # gravitational constant
     c: float = 2.998e8         # speed of light
     omega: float = 300.0 * 2.0 * np.pi  # rotation frequency (rad/s)
-    L: float = 1000.0          # length of the arm of the detector (meter)
+    L: float = field(default_factory=lambda: float(os.getenv("LIGO_ARM_LENGTH", "1000.0")))  # length of the arm of the detector (meter)
+
+
+# Cached angles from Data/bestPosition.txt (filled on first use; file is read at most once).
+_BEST_POSITION_CACHE: Optional[Tuple[float, float, float, float, float, float]] = None
+
+_FALLBACK_BEST_POSITION: Tuple[float, float, float, float, float, float] = (
+    1.5708,
+    0.1938,
+    3.1416,
+    2.3020,
+    0.9795,
+    2.2033,
+)
+
+
+def _parse_best_position_file_text(text: str) -> Optional[Tuple[float, float, float, float, float, float]]:
+    """Parse BEST_POSITION line or legacy 'Location:' line from bestPosition.txt."""
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("BEST_POSITION:"):
+            rest = s.split(":", 1)[1].strip()
+            parts = [p.strip() for p in rest.split(",")]
+            if len(parts) == 6:
+                return (
+                    float(parts[0]),
+                    float(parts[1]),
+                    float(parts[2]),
+                    float(parts[3]),
+                    float(parts[4]),
+                    float(parts[5]),
+                )
+    for line in text.splitlines():
+        if "Location:" in line and "theta arm 1" in line:
+            nums = re.findall(r"=\s*([\d.+-eE]+)", line)
+            if len(nums) >= 6:
+                return (
+                    float(nums[0]),
+                    float(nums[1]),
+                    float(nums[2]),
+                    float(nums[3]),
+                    float(nums[4]),
+                    float(nums[5]),
+                )
+    return None
+
+
+def _get_best_position_defaults() -> Tuple[float, float, float, float, float, float]:
+    """Return cached angles from Data/bestPosition.txt; read the file at most once per process."""
+    global _BEST_POSITION_CACHE
+    if _BEST_POSITION_CACHE is not None:
+        return _BEST_POSITION_CACHE
+    path = Path(__file__).resolve().parent / "Data" / "bestPosition.txt"
+    if path.is_file():
+        try:
+            parsed = _parse_best_position_file_text(path.read_text(encoding="utf-8"))
+            if parsed is not None:
+                _BEST_POSITION_CACHE = parsed
+                return _BEST_POSITION_CACHE
+        except OSError:
+            pass
+    _BEST_POSITION_CACHE = _FALLBACK_BEST_POSITION
+    return _BEST_POSITION_CACHE
 
 
 def get_hole_coordinate(k: int, t: float, config: ExperimentConfig) -> Tuple[float, float]:
@@ -143,17 +207,30 @@ def calculate_delta_t_prime(t: float, n_vec: np.ndarray, a_vec: np.ndarray, conf
     return result
 
 
-def calculate_metric_response(t: float, 
-                              theta_arm1: float = 1.5708, 
-                              phi_arm1: float = 0.1685, 
-                              theta_arm2: float = 3.1416,
-                              phi_arm2: float = 1.8930,
-                              theta_det: float = 1.2806, 
-                              phi_det: float = 2.0882) -> float:
+def calculate_metric_response(
+    t: float,
+    theta_arm1: Optional[float] = None,
+    phi_arm1: Optional[float] = None,
+    theta_arm2: Optional[float] = None,
+    phi_arm2: Optional[float] = None,
+    theta_det: Optional[float] = None,
+    phi_det: Optional[float] = None,
+) -> float:
     """
     Main entry function to compute the signal response at a given time.
     Calculates the relative transition time delay of the two arms.
+
+    Angle arguments default to values from Data/bestPosition.txt (read once and cached).
+    Pass explicit angles to override; None means use the cached best-position value for that angle.
     """
+    d1, d2, d3, d4, d5, d6 = _get_best_position_defaults()
+    theta_arm1 = d1 if theta_arm1 is None else theta_arm1
+    phi_arm1 = d2 if phi_arm1 is None else phi_arm1
+    theta_arm2 = d3 if theta_arm2 is None else theta_arm2
+    phi_arm2 = d4 if phi_arm2 is None else phi_arm2
+    theta_det = d5 if theta_det is None else theta_det
+    phi_det = d6 if phi_det is None else phi_det
+
     config = ExperimentConfig()
     
     # Calculate orientation vectors using NumPy arrays

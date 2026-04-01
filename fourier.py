@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.fft import rfft, rfftfreq
 from scipy.signal.windows import tukey
 
-int_time = 1
+int_time = 0.01
 num = int(120000 * int_time)
 
 t = np.linspace(0, int_time, num, endpoint=False)

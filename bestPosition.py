@@ -1,6 +1,10 @@
 import numpy as np
+from pathlib import Path
 from metricCalculate import calculate_metric_response, ExperimentConfig
 from scipy.optimize import minimize
+
+_DATA_DIR = Path(__file__).resolve().parent / "Data"
+_BEST_POSITION_FILE = _DATA_DIR / "bestPosition.txt"
 
 frequency = ExperimentConfig.omega
 period = 2 * np.pi / frequency
@@ -57,7 +61,7 @@ def scipy_gradient_descent(f_scaled, init_theta_arm1, init_phi_arm1, init_theta_
         bounds = bounds, 
         method = 'SLSQP',
         constraints = constraints,
-        options={'disp': True, 'ftol': 1e-15, 'eps': 1e-3, 'maxiter': 200}
+        options={'disp': True, 'ftol': 1e-10, 'eps': 1e-4, 'maxiter': 500}
     )
     
     return result.x[0], result.x[1], result.x[2], result.x[3], result.x[4], result.x[5]
@@ -72,8 +76,8 @@ if __name__ == "__main__":
     initial_theta_det = 1
     initial_phi_det = 1
 
-    # Open the log file for writing
-    with open("Data/bestPosition.log", "w") as log_file:
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with _BEST_POSITION_FILE.open("w", encoding="utf-8") as log_file:
         log_file.write(f"Initial Guess: theta arm 1 = {initial_theta_arm1:.4f}, phi arm 1 = {initial_phi_arm1:.4f}, theta arm 2 = {initial_theta_arm2:.4f}, phi arm 2 = {initial_phi_arm2:.4f}, theta detector = {initial_theta_det:.4f}, phi detector = {initial_phi_det:.4f}\n")
 
         best_theta_arm1, best_phi_arm1, best_theta_arm2, best_phi_arm2, best_theta_det, best_phi_det = scipy_gradient_descent(scaled_spherical_function, initial_theta_arm1, initial_phi_arm1, initial_theta_arm2, initial_phi_arm2, initial_theta_det, initial_phi_det)
@@ -84,3 +88,7 @@ if __name__ == "__main__":
         log_file.write("SciPy Optimization Results:\n")
         log_file.write(f"Location: theta arm 1 = {best_theta_arm1:.4f}, phi arm 1 = {best_phi_arm1:.4f}, theta arm 2 = {best_theta_arm2:.4f}, phi arm 2 = {best_phi_arm2:.4f}, theta det = {best_theta_det:.4f}, phi det = {best_phi_det:.4f}\n")
         log_file.write(f"Max Value: {true_max_value:.6e}\n")
+        log_file.write(
+            f"BEST_POSITION: {best_theta_arm1:.8f}, {best_phi_arm1:.8f}, {best_theta_arm2:.8f}, "
+            f"{best_phi_arm2:.8f}, {best_theta_det:.8f}, {best_phi_det:.8f}\n"
+        )

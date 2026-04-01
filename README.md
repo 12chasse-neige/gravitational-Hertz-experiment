@@ -160,6 +160,7 @@ S^{\text{SQL}}_{h-conv} = \frac{h_{SQL}^{2}}{2} \left(\frac{1}{\kappa} + \kappa\
 $$
 where the coupling constant is defined as
 $$
+h_{SQL} = \sqrt{\frac{8 \hbar}{m \Omega^{2}}}  \\
 \kappa (\Omega) = \frac{8 \gamma \omega_{0} P_{0}}{m L c \Omega^{2} (\gamma^{2} + \Omega^{2})}
 $$
 Notice that the laser power $P_{0}$ is the power in the F-P cavities.
