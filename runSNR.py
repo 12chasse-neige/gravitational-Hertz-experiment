@@ -9,7 +9,6 @@ import numpy as np
 
 YEAR_SECONDS = 365 * 24 * 3600
 
-
 def parse_float_list(raw: str) -> list[float]:
     s = raw.strip()
     if s.startswith("[") and s.endswith("]"):

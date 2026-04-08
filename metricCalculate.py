@@ -18,7 +18,7 @@ class ExperimentConfig:
     D: float = 5.0             # diameter of the column (meter)
     d: float = 1.0             # diameter of the holes (meter)
     s: float = 1.5             # distance from center to holes (meter)
-    R: float = 5000.0          # distance from source to detector (meter)
+    R: float = 2000.0          # distance from source to detector (meter)
     rho: float = 1750.0        # density (kg/m^3)
     G: float = 6.674e-11       # gravitational constant
     c: float = 2.998e8         # speed of light

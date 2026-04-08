@@ -61,7 +61,7 @@ def scipy_gradient_descent(f_scaled, init_theta_arm1, init_phi_arm1, init_theta_
         bounds = bounds, 
         method = 'SLSQP',
         constraints = constraints,
-        options={'disp': True, 'ftol': 1e-10, 'eps': 1e-4, 'maxiter': 500}
+        options={'disp': True, 'ftol': 1e-5, 'eps': 1e-4, 'maxiter': 500}
     )
     
     return result.x[0], result.x[1], result.x[2], result.x[3], result.x[4], result.x[5]
@@ -73,8 +73,8 @@ if __name__ == "__main__":
     initial_phi_arm1 = 0.0
     initial_theta_arm2 = np.pi/2
     initial_phi_arm2 = np.pi/2
-    initial_theta_det = 1
-    initial_phi_det = 1
+    initial_theta_det = np.pi-0.01
+    initial_phi_det = 0
 
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     with _BEST_POSITION_FILE.open("w", encoding="utf-8") as log_file:

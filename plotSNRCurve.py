@@ -27,6 +27,15 @@ def load_snr_table(csv_path: Path) -> list[dict[str, float]]:
         raise ValueError(f"No data rows found in {csv_path}")
     return rows
 
+def plot_2d(rows: list[dict[str, float]], output_path: Path, show: bool) -> None:
+    y_l = [r["l"] for r in rows]
+    z_snr = [r["snr"] for r in rows]
+    fig = plt.figure(figsize=(9, 7))
+    plt.scatter(y_l, z_snr)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig("Figure/SNR (2D).png", dpi=300)
+    print(f"Saved figure: Figure/SNR (2D).png")
+
 
 def plot_3d(rows: list[dict[str, float]], output_path: Path, show: bool) -> None:
     x_m = [r["m"] for r in rows]
@@ -81,3 +90,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    # rows = load_snr_table(Path("Data/snr_year_table.csv"))
+    # plot_2d(rows, Path("Figure/SNR (2D).png"), show=True)

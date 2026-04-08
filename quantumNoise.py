@@ -11,8 +11,8 @@ class DetectorConfig:
     """
     Dataclass to store all detector parameters.
     """
-    testmass: float = field(default_factory=lambda: float(os.getenv("LIGO_TEST_MASS", "10")))  # mass of the end testmass (kg)
-    length: float = field(default_factory=lambda: float(os.getenv("LIGO_ARM_LENGTH", "1000")))   # length of the arm (meter)
+    testmass: float = field(default_factory=lambda: float(os.getenv("LIGO_TEST_MASS", "39.6")))  # mass of the end testmass (kg)
+    length: float = field(default_factory=lambda: float(os.getenv("LIGO_ARM_LENGTH", "4000")))   # length of the arm (meter)
     hbar: float = 1.05457e-34               # reduced Plank constant (J⋅s)
     wavelength: float = 1064e-9             # laser wavelength (m)
     c: float = ExperimentConfig.c           # light speed
@@ -71,11 +71,13 @@ def get_coupling_constant(gravitationalWaveOmega: float, config: DetectorConfig 
     """
     omega = 2 * np.pi * config.c / config.wavelength
     gamma = config.T_ITM * config.c / (4 * config.length)  # cavity's half band width
+    # gamma = 2 * np.pi * 600
 
     P_0 = 2 * get_laser_power_in_cavity(config.power, config=config)
 
     # calculate the coupling constant for the given frequency
     kappa = (8 * gamma * omega * P_0) / (config.testmass * config.length * config.c * gravitationalWaveOmega**2 * (gamma**2 + gravitationalWaveOmega**2))
+
     return kappa
 
 def get_quantum_noise_psd(freq: float, config: DetectorConfig | None = None) -> float:
@@ -86,9 +88,8 @@ def get_quantum_noise_psd(freq: float, config: DetectorConfig | None = None) -> 
     """
     gravitationalWaveOmega = 2 * np.pi * freq
     kappa = get_coupling_constant(gravitationalWaveOmega, config=config)
-
-    S_SQL = (get_standard_quantum_limit(gravitationalWaveOmega, config=config)**2 / 2) * (kappa + 1 / kappa)
-    return S_SQL
+    h_sql_sq = get_standard_quantum_limit(gravitationalWaveOmega, config=config) ** 2
+    return (h_sql_sq / 2.0) * (kappa + 1 / kappa)
 
 def squeeze_db_to_r(squeeze_db: float) -> float:
     """
@@ -163,7 +164,7 @@ def plot():
     )
 
     budget = gwinc.load_budget("aLIGO")
-    budget.ifo.Optics.SRM.Transmittance = 1.0
+    budget.ifo.Optics.SRM.Transmittance = 1
     trace = budget.run(freq=freq)
     aLIGO_noise = trace["Quantum"]
     plt.plot(
