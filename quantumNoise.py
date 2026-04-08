@@ -30,24 +30,30 @@ def get_laser_power_in_cavity(inputPower: float, config: DetectorConfig | None =
     """
     Calculate the circling power in the cavity from the given input laser power.
     """
+    # from ppm to transmittance
     l_mirror = config.loss_mirror_ppm * 1e-6
     l_BS     = config.loss_BS_ppm * 1e-6
 
+    # loss per round trip
     l_roundtrip_arm = 2 * l_mirror
 
+    # per round trip, the loss is composed by two mirror reflectings and the leaking at the ETM.
     total_arm_loss = config.T_ETM + l_roundtrip_arm
+
+    # the equivalent reflection rate for the cavity and the beam splitter
     R_arm = 1 - (4 * total_arm_loss / config.T_ITM)
-    
     r_arm = np.sqrt(R_arm)
-    r_comp = r_arm * (1 - l_BS) * (1 - l_BS)
+    r_comp = r_arm * (1 - l_BS)
     r_PRM = np.sqrt(1 - config.T_PRM)    
 
     t_PRM = np.sqrt(config.T_PRM)
     PRG = (t_PRM / (1 - r_PRM * r_comp))**2
 
+    # the power at the beam splitter and at each arm's cavity
     P_BS = inputPower * PRG   
     P_arm_input = P_BS / 2
     
+    # magnifying of the arm cavity
     ACG = 4 / config.T_ITM
     P_circulating = P_arm_input * ACG
     
@@ -98,7 +104,6 @@ def squeeze_db_to_r(squeeze_db: float) -> float:
     """
     return squeeze_db * np.log(10.0) / 20.0
 
-
 def squeeze_quantum_noise_with_same_angle(
     freq,
     squeeze_db: float = 10.0,
@@ -146,6 +151,7 @@ def squeeze_quantum_noise_with_varying_angle(
     h_sql_sq = get_standard_quantum_limit(gravitationalWaveOmega, config=config) ** 2
     kappa = get_coupling_constant(gravitationalWaveOmega, config=config)
     return (h_sql_sq / 2.0) * (kappa + 1 / kappa) * np.exp(-2.0 * r)
+
 
 def plot():
     freq = np.linspace(100, 1000, 10000)
