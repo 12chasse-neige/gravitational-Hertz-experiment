@@ -1,5 +1,4 @@
 import numpy as np
-import re
 import os
 from pathlib import Path
 from scipy.integrate import quad
@@ -7,6 +6,64 @@ import sys
 import argparse
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
+
+
+def spherical_unit_vector(theta: float, phi: float) -> np.ndarray:
+    """
+    Standard spherical angles on the unit sphere in a right-handed Cartesian frame:
+
+        x = sin(theta) * cos(phi)
+        y = sin(theta) * sin(phi)
+        z = cos(theta)
+
+    Here ``theta`` is the polar angle measured from +z, and ``phi`` is the azimuth
+    measured from +x toward +y. This matches the detector-frame convention used
+    throughout this refactor.
+    """
+    return np.array(
+        [
+            float(np.sin(theta) * np.cos(phi)),
+            float(np.sin(theta) * np.sin(phi)),
+            float(np.cos(theta)),
+        ],
+        dtype=float,
+    )
+
+
+def rotation_body_to_detector(theta_rot: float, phi_rot: float) -> np.ndarray:
+    """
+    Build an orthonormal rotation ``R`` (shape ``(3, 3)``) mapping body-frame
+    coordinates into **detector** coordinates.
+
+    Body frame (unchanged quadrupole construction in this repository):
+        - ``z_body`` is the rotor symmetry axis.
+
+    Detector frame (new convention requested for this project):
+        - Origin at the interferometer vertex.
+        - ``+x`` is LIGO arm 1, ``+y`` is LIGO arm 2, ``+z`` completes a right-handed
+          triad (``z_hat = x_hat \\times y_hat``).
+
+    The caller supplies ``(theta_rot, phi_rot)`` describing **where the rotor axis
+    points in the detector frame** (same spherical convention as ``spherical_unit_vector``).
+
+    Columns of ``R`` are the body basis vectors expressed in detector coordinates, so
+    ``v_det = R @ v_body`` and ``h_det = R @ h_body @ R.T``.
+    """
+    z_hat = spherical_unit_vector(theta_rot, phi_rot)
+    z_hat = z_hat / np.linalg.norm(z_hat)
+
+    # Pick any vector not (nearly) parallel to ``z_hat`` to span the equatorial plane.
+    if abs(float(z_hat[2])) < 0.9:
+        tmp = np.array([0.0, 0.0, 1.0], dtype=float)
+    else:
+        tmp = np.array([1.0, 0.0, 0.0], dtype=float)
+
+    x_hat = np.cross(z_hat, tmp)
+    x_hat = x_hat / np.linalg.norm(x_hat)
+    y_hat = np.cross(z_hat, x_hat)
+    # ``np.stack`` columns: body x, y, z map to ``x_hat``, ``y_hat``, ``z_hat``.
+    return np.column_stack([x_hat, y_hat, z_hat])
+
 
 @dataclass
 class ExperimentConfig:
@@ -27,51 +84,51 @@ class ExperimentConfig:
 
 
 # Cached angles from Data/bestPosition.txt (filled on first use; file is read at most once).
-_BEST_POSITION_CACHE: Optional[Tuple[float, float, float, float, float, float]] = None
+# Format is **detector-centric** with four numbers:
+#   (theta_src, phi_src, theta_rot, phi_rot)
+# See ``calculate_metric_response`` for precise definitions.
+_BEST_POSITION_CACHE: Optional[Tuple[float, float, float, float]] = None
 
-_FALLBACK_BEST_POSITION: Tuple[float, float, float, float, float, float] = (
-    1.5708,
-    0.1938,
-    3.1416,
-    2.3020,
-    0.9795,
-    2.2033,
+# Reasonable cold-start angles if ``Data/bestPosition.txt`` is missing. These are
+# **not** guaranteed optimal; run ``bestPosition.py`` to refresh the cache.
+_FALLBACK_BEST_POSITION: Tuple[float, float, float, float] = (
+    0.01,  # source nearly along -z (almost overhead)
+    0.0,
+    0.01,  # rotor axis mostly in the x-y plane
+    0.0,
 )
 
 
-def _parse_best_position_file_text(text: str) -> Optional[Tuple[float, float, float, float, float, float]]:
-    """Parse BEST_POSITION line or legacy 'Location:' line from bestPosition.txt."""
+def _parse_best_position_file_text(text: str) -> Optional[Tuple[float, float, float, float]]:
+    """
+    Parse the machine-readable ``BEST_POSITION`` line from ``Data/bestPosition.txt``.
+
+    Expected format (single line, four comma-separated floats)::
+
+        BEST_POSITION: theta_src, phi_src, theta_rot, phi_rot
+
+    Legacy six-angle outputs are intentionally **not** parsed here anymore; rerun
+    ``bestPosition.py`` after this refactor to regenerate the cache.
+    """
     for line in text.splitlines():
         s = line.strip()
         if s.startswith("BEST_POSITION:"):
             rest = s.split(":", 1)[1].strip()
             parts = [p.strip() for p in rest.split(",")]
-            if len(parts) == 6:
+            if len(parts) == 4:
                 return (
                     float(parts[0]),
                     float(parts[1]),
                     float(parts[2]),
                     float(parts[3]),
-                    float(parts[4]),
-                    float(parts[5]),
-                )
-    for line in text.splitlines():
-        if "Location:" in line and "theta arm 1" in line:
-            nums = re.findall(r"=\s*([\d.+-eE]+)", line)
-            if len(nums) >= 6:
-                return (
-                    float(nums[0]),
-                    float(nums[1]),
-                    float(nums[2]),
-                    float(nums[3]),
-                    float(nums[4]),
-                    float(nums[5]),
                 )
     return None
 
 
-def _get_best_position_defaults() -> Tuple[float, float, float, float, float, float]:
-    """Return cached angles from Data/bestPosition.txt; read the file at most once per process."""
+def _get_best_position_defaults() -> Tuple[float, float, float, float]:
+    """
+    Return cached angles from Data/bestPosition.txt; read the file at most once per process.
+    """
     global _BEST_POSITION_CACHE
     if _BEST_POSITION_CACHE is not None:
         return _BEST_POSITION_CACHE
@@ -129,9 +186,14 @@ def second_derivative_of_tensor(t: float, config: ExperimentConfig) -> np.ndarra
     return -4.0 * config.omega**2 * tensor
 
 
-def get_metric_tensor(r: float, t: float, config: ExperimentConfig) -> np.ndarray:
+def get_metric_tensor_body_frame(r: float, t: float, config: ExperimentConfig) -> np.ndarray:
     """
-    Calculate the raw metric tensor h_ij before TT gauge projection.
+    Raw metric perturbation ``h_ij`` in the **source body frame** (the frame where the
+    quadrupole model is built: rotor axis is +z, holes move in the x-y plane).
+
+    This is the same physics as the pre-refactor ``get_metric_tensor``, but the name
+    makes explicit that components still live in the body basis before rotating into
+    the detector frame.
     """
     t_rev = t - r / config.c
     coeff = 2.0 * config.G / (r * config.c**4)
@@ -167,16 +229,36 @@ def project_to_tt_gauge_dynamic(h_matrix: np.ndarray, r_vec: np.ndarray) -> np.n
     return h_tt
 
 
-def calculate_delta_t(t: float, n_vec: np.ndarray, a_vec: np.ndarray, config: ExperimentConfig) -> float:
+def calculate_delta_t(
+    t: float,
+    n_src_to_det: np.ndarray,
+    a_vec: np.ndarray,
+    config: ExperimentConfig,
+    R_body_to_det: np.ndarray,
+) -> float:
     """
     Calculate the forward photon transition time delay.
+
+    **Detector frame geometry (new convention).** The interferometer vertex is the
+    origin. The outgoing arm used in this integral lies along ``a_vec`` (a unit
+    vector, typically ``+x`` for arm 1). The source sits at ``S = R * n_src_to_det``,
+    where ``n_src_to_det`` is the unit vector **from the detector toward the source**.
+
+    The separation vector from the source to a point ``x`` meters down the arm is
+    therefore ``r_vec = x * a_vec - R * n_src_to_det``, which is what enters both the
+    propagation distance and the TT projector.
     """
+    n_src_to_det = np.asarray(n_src_to_det, dtype=float)
+    n_src_to_det = n_src_to_det / np.linalg.norm(n_src_to_det)
+    R_body_to_det = np.asarray(R_body_to_det, dtype=float)
+
     def integrand(x):
-        r_vec = config.R * n_vec + x * a_vec
+        r_vec = x * a_vec - config.R * n_src_to_det
         r_distance = np.linalg.norm(r_vec)
-        
-        h_matrix = get_metric_tensor(r_distance, t + x / config.c, config)
-        
+
+        h_body = get_metric_tensor_body_frame(r_distance, t + x / config.c, config)
+        h_matrix = R_body_to_det @ h_body @ R_body_to_det.T
+
         h_tt = project_to_tt_gauge_dynamic(h_matrix, r_vec)
         
         # Calculate a_i * a_j * h_tt_ij using dot products
@@ -188,17 +270,29 @@ def calculate_delta_t(t: float, n_vec: np.ndarray, a_vec: np.ndarray, config: Ex
     return result
 
 
-def calculate_delta_t_prime(t: float, n_vec: np.ndarray, a_vec: np.ndarray, config: ExperimentConfig) -> float:
+def calculate_delta_t_prime(
+    t: float,
+    n_src_to_det: np.ndarray,
+    a_vec: np.ndarray,
+    config: ExperimentConfig,
+    R_body_to_det: np.ndarray,
+) -> float:
     """
-    Calculate the return photon transition time delay.
+    Calculate the return photon transition time delay (same frame conventions as
+    ``calculate_delta_t``).
     """
+    n_src_to_det = np.asarray(n_src_to_det, dtype=float)
+    n_src_to_det = n_src_to_det / np.linalg.norm(n_src_to_det)
+    R_body_to_det = np.asarray(R_body_to_det, dtype=float)
+
     def integrand(x):
-        r_vec = config.R * n_vec + x * a_vec
+        r_vec = x * a_vec - config.R * n_src_to_det
         r_distance = np.linalg.norm(r_vec)
-        
-        h_matrix = get_metric_tensor(r_distance, t + (config.L - x) / config.c, config)
-        
-        h_tt = project_to_tt_gauge_dynamic(h_matrix, r_vec) 
+
+        h_body = get_metric_tensor_body_frame(r_distance, t + (config.L - x) / config.c, config)
+        h_matrix = R_body_to_det @ h_body @ R_body_to_det.T
+
+        h_tt = project_to_tt_gauge_dynamic(h_matrix, r_vec)
         
         val = a_vec.T @ h_tt @ a_vec
         return val / (2.0 * config.c)
@@ -209,52 +303,58 @@ def calculate_delta_t_prime(t: float, n_vec: np.ndarray, a_vec: np.ndarray, conf
 
 def calculate_metric_response(
     t: float,
-    theta_arm1: Optional[float] = None,
-    phi_arm1: Optional[float] = None,
-    theta_arm2: Optional[float] = None,
-    phi_arm2: Optional[float] = None,
-    theta_det: Optional[float] = None,
-    phi_det: Optional[float] = None,
+    theta_src: Optional[float] = None,
+    phi_src: Optional[float] = None,
+    theta_rot: Optional[float] = None,
+    phi_rot: Optional[float] = None,
 ) -> float:
     """
-    Main entry function to compute the signal response at a given time.
-    Calculates the relative transition time delay of the two arms.
+    Main entry function to compute the strain response at a given time.
 
-    Angle arguments default to values from Data/bestPosition.txt (read once and cached).
-    Pass explicit angles to override; None means use the cached best-position value for that angle.
+    **Detector frame (requested convention).** The interferometer vertex is the origin
+    of a right-handed Cartesian system with:
+
+        - arm 1 along ``+x``,
+        - arm 2 along ``+y``,
+        - ``+z`` completing the triad.
+
+    Each source is parameterized by four angles:
+
+        1. ``(theta_src, phi_src)`` describe the **unit vector from the detector toward
+           the source** using the same spherical convention as ``spherical_unit_vector``.
+        2. ``(theta_rot, phi_rot)`` describe the **unit vector along the rotor symmetry
+           axis** (the body ``+z`` direction) expressed in the detector frame.
+
+    The quadrupole oscillation is still modeled in the rotating body frame, then
+    rotated into the detector frame via ``rotation_body_to_detector``.
+
+    Angle arguments default to values from ``Data/bestPosition.txt`` (read once and
+    cached). Pass explicit angles to override; ``None`` means "use the cached value".
     """
-    d1, d2, d3, d4, d5, d6 = _get_best_position_defaults()
-    theta_arm1 = d1 if theta_arm1 is None else theta_arm1
-    phi_arm1 = d2 if phi_arm1 is None else phi_arm1
-    theta_arm2 = d3 if theta_arm2 is None else theta_arm2
-    phi_arm2 = d4 if phi_arm2 is None else phi_arm2
-    theta_det = d5 if theta_det is None else theta_det
-    phi_det = d6 if phi_det is None else phi_det
+    d1, d2, d3, d4 = _get_best_position_defaults()
+    theta_src = d1 if theta_src is None else theta_src
+    phi_src = d2 if phi_src is None else phi_src
+    theta_rot = d3 if theta_rot is None else theta_rot
+    phi_rot = d4 if phi_rot is None else phi_rot
 
     config = ExperimentConfig()
-    
-    # Calculate orientation vectors using NumPy arrays
-    a_vec = np.array([np.sin(theta_arm1) * np.cos(phi_arm1), 
-                      np.sin(theta_arm1) * np.sin(phi_arm1), 
-                      np.cos(theta_arm1)])
-    
-    b_vec = np.array([np.sin(theta_arm2) * np.cos(phi_arm2), 
-                      np.sin(theta_arm2) * np.sin(phi_arm2), 
-                      np.cos(theta_arm2)])
-             
-    n_vec = np.array([np.sin(theta_det) * np.cos(phi_det), 
-                      np.sin(theta_det) * np.sin(phi_det), 
-                      np.cos(theta_det)])
+
+    # LIGO arm directions are fixed in the detector frame (no longer optimized).
+    a_vec = np.array([1.0, 0.0, 0.0], dtype=float)
+    b_vec = np.array([0.0, 1.0, 0.0], dtype=float)
+
+    n_src_to_det = spherical_unit_vector(theta_src, phi_src)
+    R_body_to_det = rotation_body_to_detector(theta_rot, phi_rot)
 
     t_forward = t - 2.0 * config.L / config.c
     t_return = t - config.L / config.c
 
-    delta_t1 = calculate_delta_t(t_forward, n_vec, a_vec, config)
-    delta_t_prime1 = calculate_delta_t_prime(t_return, n_vec, a_vec, config)
+    delta_t1 = calculate_delta_t(t_forward, n_src_to_det, a_vec, config, R_body_to_det)
+    delta_t_prime1 = calculate_delta_t_prime(t_return, n_src_to_det, a_vec, config, R_body_to_det)
     delay_of_transition_time1 = delta_t1 + delta_t_prime1
 
-    delta_t2 = calculate_delta_t(t_forward, n_vec, b_vec, config)
-    delta_t_prime2 = calculate_delta_t_prime(t_return, n_vec, b_vec, config)
+    delta_t2 = calculate_delta_t(t_forward, n_src_to_det, b_vec, config, R_body_to_det)
+    delta_t_prime2 = calculate_delta_t_prime(t_return, n_src_to_det, b_vec, config, R_body_to_det)
     delay_of_transition_time2 = delta_t2 + delta_t_prime2
 
     delay_of_transition_time_delta = delay_of_transition_time1 - delay_of_transition_time2
@@ -271,19 +371,44 @@ def parse_arguments() -> argparse.Namespace:
     Parse command line arguments.
     """
     parser = argparse.ArgumentParser(
-        epilog='example: python metricCalculate.py -t 0.01 -ta 1.6882 -pa 0.7850 -td 0.0000 -pd 1.1981'
+        epilog=(
+            "example: python metricCalculate.py -t 0.01 "
+            "-ts 3.1 -ps 0.0 -tr 1.57 -pr 0.0"
+        )
     )
-    
-    parser.add_argument('-t', '--time', type=str, required=True, help='current time in seconds')
-    parser.add_argument('-ta1', '--thetaarm1', type=str, required=True, help='polar angle of the detector arm 1')
-    parser.add_argument('-pa1', '--phiarm1', type=str, required=True, help='azimuthal angle of the detector arm 1')
-    parser.add_argument('-ta2', '--thetaarm2', type=str, required=True, help='polar angle of the detector arm 2')
-    parser.add_argument('-pa2', '--phiarm2', type=str, required=True, help='azimuthal angle of the detector arm 2')
-    parser.add_argument('-td', '--thetadetector', type=str, required=True, help='polar angle of the detector')
-    parser.add_argument('-pd', '--phidetector', type=str, required=True, help='azimuthal angle of the detector')
-    parser.add_argument('-v', '--verbose', action='store_true', help='show detailed output')
-    parser.add_argument('-o', '--output', type=str, default=None, help='path for the output file')
-    
+
+    parser.add_argument("-t", "--time", type=str, required=True, help="current time in seconds")
+    parser.add_argument(
+        "-ts",
+        "--thetasource",
+        type=str,
+        required=True,
+        help="polar angle (detector frame) of the vector from detector toward the source",
+    )
+    parser.add_argument(
+        "-ps",
+        "--phisource",
+        type=str,
+        required=True,
+        help="azimuthal angle (detector frame) of the vector from detector toward the source",
+    )
+    parser.add_argument(
+        "-tr",
+        "--thetarotation",
+        type=str,
+        required=True,
+        help="polar angle (detector frame) of the rotor symmetry axis (body +z)",
+    )
+    parser.add_argument(
+        "-pr",
+        "--phirotation",
+        type=str,
+        required=True,
+        help="azimuthal angle (detector frame) of the rotor symmetry axis (body +z)",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="show detailed output")
+    parser.add_argument("-o", "--output", type=str, default=None, help="path for the output file")
+
     return parser.parse_args()
 
 
@@ -296,15 +421,19 @@ if __name__ == "__main__":
             print(f"Output file: {args.output}")
     
     time_val = float(args.time)
-    theta_arm1_val = float(args.thetaarm1)
-    phi_arm1_val = float(args.phiarm1)
-    theta_arm2_val = float(args.thetaarm2)
-    phi_arm2_val = float(args.phiarm2)
-    theta_det_val = float(args.thetadetector)
-    phi_det_val = float(args.phidetector)
+    theta_src_val = float(args.thetasource)
+    phi_src_val = float(args.phisource)
+    theta_rot_val = float(args.thetarotation)
+    phi_rot_val = float(args.phirotation)
     
     # Execute main calculation
-    result = calculate_metric_response(time_val, theta_arm1_val, phi_arm1_val, theta_arm2_val, phi_arm2_val, theta_det_val, phi_det_val)
+    result = calculate_metric_response(
+        time_val,
+        theta_src_val,
+        phi_src_val,
+        theta_rot_val,
+        phi_rot_val,
+    )
     print(result)
     
     if args.output:

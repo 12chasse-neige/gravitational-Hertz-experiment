@@ -6,89 +6,132 @@ from scipy.optimize import minimize
 _DATA_DIR = Path(__file__).resolve().parent / "Data"
 _BEST_POSITION_FILE = _DATA_DIR / "bestPosition.txt"
 
-frequency = ExperimentConfig.omega
-period = 2 * np.pi / frequency
+angular_frequency = ExperimentConfig.omega
+period = 2 * np.pi / angular_frequency
 
-def get_the_signal_amplitude(theta_arm1, phi_arm1, theta_arm2, phi_arm2, theta_det, phi_det):
+
+def get_the_signal_amplitude(theta_src: float, phi_src: float, theta_rot: float, phi_rot: float) -> float:
     """
-    Get the amplitude of the signal
+    Scalar figure-of-merit for the optimizer: approximate GW strain amplitude.
+
+    **Detector frame.** The interferometer arms are fixed along ``+x`` and ``+y`` in
+    ``metricCalculate.calculate_metric_response``; only the source line-of-sight
+    ``(theta_src, phi_src)`` and rotor axis ``(theta_rot, phi_rot)`` are varied here.
     """
     t1 = 0.0
-    t2 = period / 8.0 
-    
-    val1 = calculate_metric_response(t1, theta_arm1, phi_arm1, theta_arm2, phi_arm2, theta_det, phi_det)
-    val2 = calculate_metric_response(t2, theta_arm1, phi_arm1, theta_arm2, phi_arm2, theta_det, phi_det)
-    
-    amplitude = np.sqrt(val1**2 + val2**2)
-    return amplitude
+    t2 = period / 8.0
 
-def spherical_function(theta_arm1, phi_arm1, theta_arm2, phi_arm2, theta_det, phi_det):
-    val = get_the_signal_amplitude(theta_arm1, phi_arm1, theta_arm2, phi_arm2, theta_det, phi_det)
-    return float(val)
+    val1 = calculate_metric_response(t1, theta_src, phi_src, theta_rot, phi_rot)
+    val2 = calculate_metric_response(t2, theta_src, phi_src, theta_rot, phi_rot)
+
+    amplitude = np.sqrt(val1**2 + val2**2)
+    return float(amplitude)
+
+
+def spherical_function(theta_src: float, phi_src: float, theta_rot: float, phi_rot: float) -> float:
+    """Unscaled objective (physical units)."""
+    return get_the_signal_amplitude(theta_src, phi_src, theta_rot, phi_rot)
+
 
 SCALE_FACTOR = 1e38
 
-def scaled_spherical_function(theta_arm1, phi_arm1, theta_arm2, phi_arm2, theta_det, phi_det):
-    """
-    Returns values roughly around 1.0 to 10.0 so the 
-    Gradient Descent math actually works.
-    """
-    return spherical_function(theta_arm1, phi_arm1, theta_arm2, phi_arm2, theta_det, phi_det) * SCALE_FACTOR
 
-def constraint_orthogonality(x):
+def scaled_spherical_function(theta_src: float, phi_src: float, theta_rot: float, phi_rot: float) -> float:
     """
-    The constraint function, making sure that the two arms are orthogonal.
+    Scaled objective for numerical optimization.
+
+    The raw strain values are tiny; multiplying by ``SCALE_FACTOR`` keeps gradients
+    well-conditioned for SciPy without changing the location of the maximum.
     """
-    th1, ph1, th2, ph2, thd, phd = x
-    a1 = np.array([np.sin(th1)*np.cos(ph1), np.sin(th1)*np.sin(ph1), np.cos(th1)])
-    a2 = np.array([np.sin(th2)*np.cos(ph2), np.sin(th2)*np.sin(ph2), np.cos(th2)])
-    return np.dot(a1, a2)
+    return spherical_function(theta_src, phi_src, theta_rot, phi_rot) * SCALE_FACTOR
 
 
-def scipy_gradient_descent(f_scaled, init_theta_arm1, init_phi_arm1, init_theta_arm2, init_phi_arm2, init_theta_det, init_phi_det):
-    # Minimize the negative of the SCALED function
-    def negative_f(vars):
-        theta_arm1, phi_arm1, theta_arm2, phi_arm2, theta_det, phi_det = vars
-        return -f_scaled(theta_arm1, phi_arm1, theta_arm2, phi_arm2, theta_det, phi_det)
-    
-    bounds =[(0, np.pi), (0, 2 * np.pi), (0, np.pi), (0, 2 * np.pi), (0, np.pi), (0, 2 * np.pi)]
+def scipy_gradient_descent(
+    f_scaled,
+    init_theta_src: float,
+    init_phi_src: float,
+    init_theta_rot: float,
+    init_phi_rot: float,
+) -> tuple[float, float, float, float]:
+    """
+    Maximize the strain amplitude over the four detector-frame angles.
 
-    constraints = {'type': 'eq', 'fun': constraint_orthogonality}
-    
+    **Why this is simpler than the old six-angle version.** Arms are no longer free
+    parameters: LIGO arm 1 is ``+x`` and arm 2 is ``+y`` by definition, so the only
+    remaining orientation freedom is the source direction and the rotor axis.
+
+    ``SLSQP`` is kept for familiarity, but the heavy orthogonality constraint on the
+    arms is gone because orthogonality is now structural.
+    """
+
+    def negative_f(vars: np.ndarray) -> float:
+        theta_src, phi_src, theta_rot, phi_rot = vars
+        return -float(
+            f_scaled(
+                float(theta_src),
+                float(phi_src),
+                float(theta_rot),
+                float(phi_rot),
+            )
+        )
+
+    bounds = [
+        (0.0, float(np.pi)),
+        (0.0, float(2.0 * np.pi)),
+        (0.0, float(np.pi)),
+        (0.0, float(2.0 * np.pi)),
+    ]
+
     result = minimize(
-        negative_f, 
-        x0 = [init_theta_arm1, init_phi_arm1, init_theta_arm2, init_phi_arm2, init_theta_det, init_phi_det], 
-        bounds = bounds, 
-        method = 'SLSQP',
-        constraints = constraints,
-        options={'disp': True, 'ftol': 1e-5, 'eps': 1e-4, 'maxiter': 500}
+        negative_f,
+        x0 = np.array(
+             [init_theta_src, init_phi_src, init_theta_rot, init_phi_rot],
+             dtype=float,
+        ),
+        bounds=bounds,
+        method="SLSQP",
+        options={"disp": True, "ftol": 1e-5, "eps": 1e-4, "maxiter": 500},
     )
-    
-    return result.x[0], result.x[1], result.x[2], result.x[3], result.x[4], result.x[5]
+
+    return float(result.x[0]), float(result.x[1]), float(result.x[2]), float(result.x[3])
 
 
 if __name__ == "__main__":
-    # initial guess
-    initial_theta_arm1 = np.pi/2
-    initial_phi_arm1 = 0.0
-    initial_theta_arm2 = np.pi/2
-    initial_phi_arm2 = np.pi/2
-    initial_theta_det = np.pi-0.01
-    initial_phi_det = 0
+    # Cold start: pick a sky location near the old default (source mostly along +z)
+    # and a rotor axis mostly in the +z direction
+    initial_theta_src = 0.01
+    initial_phi_src = 0.0
+    initial_theta_rot = 0.01
+    initial_phi_rot = 0.0
 
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     with _BEST_POSITION_FILE.open("w", encoding="utf-8") as log_file:
-        log_file.write(f"Initial Guess: theta arm 1 = {initial_theta_arm1:.4f}, phi arm 1 = {initial_phi_arm1:.4f}, theta arm 2 = {initial_theta_arm2:.4f}, phi arm 2 = {initial_phi_arm2:.4f}, theta detector = {initial_theta_det:.4f}, phi detector = {initial_phi_det:.4f}\n")
-
-        best_theta_arm1, best_phi_arm1, best_theta_arm2, best_phi_arm2, best_theta_det, best_phi_det = scipy_gradient_descent(scaled_spherical_function, initial_theta_arm1, initial_phi_arm1, initial_theta_arm2, initial_phi_arm2, initial_theta_det, initial_phi_det)
-
-        true_max_value = spherical_function(best_theta_arm1, best_phi_arm1, best_theta_arm2, best_phi_arm2, best_theta_det, best_phi_det)
-
-        log_file.write("-" * 50 + "\n")
-        log_file.write("SciPy Optimization Results:\n")
-        log_file.write(f"Location: theta arm 1 = {best_theta_arm1:.4f}, phi arm 1 = {best_phi_arm1:.4f}, theta arm 2 = {best_theta_arm2:.4f}, phi arm 2 = {best_phi_arm2:.4f}, theta det = {best_theta_det:.4f}, phi det = {best_phi_det:.4f}\n")
-        log_file.write(f"Max Value: {true_max_value:.6e}\n")
         log_file.write(
-            f"BEST_POSITION: {best_theta_arm1:.8f}, {best_phi_arm1:.8f}, {best_theta_arm2:.8f}, "
-            f"{best_phi_arm2:.8f}, {best_theta_det:.8f}, {best_phi_det:.8f}\n"
+            "# Detector frame: vertex at origin; arm1 +x; arm2 +y; +z completes RHS.\n"
+            "# (theta_src, phi_src): unit vector from detector toward the source.\n"
+            "# (theta_rot, phi_rot): rotor symmetry axis (body +z) in detector frame.\n"
+            f"# Initial guess [rad]: theta_src={initial_theta_src:.8f}, phi_src={initial_phi_src:.8f}, "
+            f"theta_rot={initial_theta_rot:.8f}, phi_rot={initial_phi_rot:.8f}\n"
         )
+
+        best_theta_src, best_phi_src, best_theta_rot, best_phi_rot = scipy_gradient_descent(
+            scaled_spherical_function,
+            initial_theta_src,
+            initial_phi_src,
+            initial_theta_rot,
+            initial_phi_rot,
+        )
+
+        true_max_value = spherical_function(
+            best_theta_src,
+            best_phi_src,
+            best_theta_rot,
+            best_phi_rot,
+        )
+
+        # Single machine-readable summary line (no duplicate "Location" block).
+        log_file.write(
+            f"BEST_POSITION: {best_theta_src:.8f}, {best_phi_src:.8f}, "
+            f"{best_theta_rot:.8f}, {best_phi_rot:.8f}\n"
+        )
+        log_file.write(f"max_signal_amplitude: {true_max_value:.12e}\n")
