@@ -5,3 +5,5 @@ scipy>=1.10,<2
 
 # Gravitational-wave interferometer noise budgets (gwinc, Struct, etc.)
 gwinc>=0.6,<0.7
+
+# All other imports in the codebase are from the Python standard library or submodules of the above packages.

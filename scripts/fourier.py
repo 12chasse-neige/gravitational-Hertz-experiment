@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_IMAGE_DIR = Path(__file__).resolve().parent.parent / "images"
 _FREQS_FILE = _DATA_DIR / "freqs.npy"
 _MAGNITUDE_FILE = _DATA_DIR / "magnitude.npy"
 
@@ -27,7 +28,7 @@ plt.plot(t, h_values)
 plt.xlabel('Time [s]')
 plt.ylabel('Signal [1]')
 plt.title('Input Signal Curve')
-plt.savefig("./Figure/Signal.png")
+plt.savefig(_IMAGE_DIR / "Signal.png")
 
 def fourier(signal, sampling_rate = NUM / INT_TIME):
     """
@@ -64,7 +65,7 @@ def plot(inputSignal, fft_magnitude, freqs):
     axes[1].set_xlim(1,1000)
 
     plt.tight_layout()
-    plt.savefig("./Figure/Fouriered Signal.png")
+    plt.savefig(_IMAGE_DIR / "Fouriered Signal.png")
 
 def main():
     inputSignal, fft_magnitude, freqs = fourier(h_values)

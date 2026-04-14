@@ -33,8 +33,8 @@ def plot_2d(rows: list[dict[str, float]], output_path: Path, show: bool) -> None
     fig = plt.figure(figsize=(9, 7))
     plt.scatter(y_l, z_snr)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig("Figure/SNR (2D).png", dpi=300)
-    print(f"Saved figure: Figure/SNR (2D).png")
+    fig.savefig(output_path, dpi=300)
+    print(f"Saved figure: {output_path}")
 
 
 def plot_3d(rows: list[dict[str, float]], output_path: Path, show: bool) -> None:
@@ -74,8 +74,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default=f"Figure/SNR (3D).png",
-        help="Output figure path. Default: Figure/SNR (3D).png",
+        default=f"images/SNR (3D).png",
+        help="Output figure path. Default: images/SNR (3D).png",
     )
     parser.add_argument(
         "--show",
@@ -91,4 +91,4 @@ def main() -> None:
 if __name__ == "__main__":
     main()
     # rows = load_snr_table(Path("Data/snr_year_table.csv"))
-    # plot_2d(rows, Path("Figure/SNR (2D).png"), show=True)
+    # plot_2d(rows, Path("images/SNR (2D).png"), show=True)

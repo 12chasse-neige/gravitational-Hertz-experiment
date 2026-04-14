@@ -189,7 +189,7 @@ def plot():
     plt.ylabel("Quantum noise [1/sqrt(Hz)]")
     plt.legend(loc="upper right", fontsize="small")
     plt.title("Quantum noise before squeezing (ASD)")
-    plt.savefig("./Figure/Quantum Noise (Before Squeezing).png")
+    plt.savefig("./images/Quantum Noise (Before Squeezing).png")
     plt.close()
 
     # Figure 2: ~10 dB squeezing — analytic model vs gwinc with Squeezer enabled
@@ -227,7 +227,7 @@ def plot():
     plt.ylabel("Quantum noise [1/sqrt(Hz)]")
     plt.legend(loc="upper right", fontsize="small")
     plt.title("Quantum noise after squeezing (ASD)")
-    plt.savefig("./Figure/Quantum Noise (After Squeezing).png")
+    plt.savefig("./images/Quantum Noise (After Squeezing).png")
     plt.close()
 
 if __name__ == "__main__":
