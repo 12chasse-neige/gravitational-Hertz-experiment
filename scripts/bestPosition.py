@@ -1,9 +1,11 @@
 import numpy as np
 from pathlib import Path
-from metricCalculate import calculate_metric_response, ExperimentConfig
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts.metricCalculate import calculate_metric_response, ExperimentConfig
 from scipy.optimize import minimize
 
-_DATA_DIR = Path(__file__).resolve().parent / "Data"
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _BEST_POSITION_FILE = _DATA_DIR / "bestPosition.txt"
 
 angular_frequency = ExperimentConfig.omega
@@ -90,7 +92,7 @@ def scipy_gradient_descent(
         ),
         bounds=bounds,
         method="SLSQP",
-        options={"disp": True, "ftol": 1e-5, "eps": 1e-4, "maxiter": 500},
+        options={"disp": True, "ftol": 1e-6, "eps": 1e-5, "maxiter": 500},
     )
 
     return float(result.x[0]), float(result.x[1]), float(result.x[2]), float(result.x[3])
@@ -99,9 +101,9 @@ def scipy_gradient_descent(
 if __name__ == "__main__":
     # Cold start: pick a sky location near the old default (source mostly along +z)
     # and a rotor axis mostly in the +z direction
-    initial_theta_src = 0.01
+    initial_theta_src = 0.1
     initial_phi_src = 0.0
-    initial_theta_rot = 0.01
+    initial_theta_rot = 1.0
     initial_phi_rot = 0.0
 
     _DATA_DIR.mkdir(parents=True, exist_ok=True)

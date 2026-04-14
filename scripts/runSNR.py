@@ -4,7 +4,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from fourier import int_time
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts.fourier import int_time
 import numpy as np
 
 YEAR_SECONDS = 365 * 24 * 3600
@@ -50,10 +51,10 @@ def run_python_file(script_name: str, env: dict[str, str]) -> None:
 
 
 def calculate_snr_year_from_saved_data(test_mass: float, arm_length: float) -> float:
-    from quantumNoise import DetectorConfig, squeeze_quantum_noise_with_varying_angle
+    from scripts.quantumNoise import DetectorConfig, squeeze_quantum_noise_with_varying_angle
 
-    signal_magnitude = np.load("Data/magnitude.npy")
-    freq = np.load("Data/freqs.npy")
+    signal_magnitude = np.load("data/magnitude.npy")
+    freq = np.load("data/freqs.npy")
 
     valid_mask = (freq >= 1.0) & (freq <= 5000.0)
     freq_valid = freq[valid_mask]
@@ -86,8 +87,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default="Data/snr_year_table.csv",
-        help="Output CSV path. Default: Data/snr_year_table.csv",
+        default="data/snr_year_table.csv",
+        help="Output CSV path. Default: data/snr_year_table.csv",
     )
     args = parser.parse_args()
 
@@ -96,7 +97,7 @@ def main() -> None:
 
     repo_root = Path(__file__).resolve().parent
     os.chdir(repo_root)
-    Path("Data").mkdir(parents=True, exist_ok=True)
+    Path("data").mkdir(parents=True, exist_ok=True)
 
     results = []
     for length in lengths:

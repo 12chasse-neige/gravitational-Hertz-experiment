@@ -75,7 +75,7 @@ class ExperimentConfig:
     D: float = 5.0             # diameter of the column (meter)
     d: float = 1.0             # diameter of the holes (meter)
     s: float = 1.5             # distance from center to holes (meter)
-    R: float = 2000.0          # distance from source to detector (meter)
+    R: float = 4000.0          # distance from source to detector (meter)
     rho: float = 1750.0        # density (kg/m^3)
     G: float = 6.674e-11       # gravitational constant
     c: float = 2.998e8         # speed of light
@@ -83,25 +83,25 @@ class ExperimentConfig:
     L: float = field(default_factory=lambda: float(os.getenv("LIGO_ARM_LENGTH", "1000.0")))  # length of the arm of the detector (meter)
 
 
-# Cached angles from Data/bestPosition.txt (filled on first use; file is read at most once).
+# Cached angles from data/bestPosition.txt (filled on first use; file is read at most once).
 # Format is **detector-centric** with four numbers:
 #   (theta_src, phi_src, theta_rot, phi_rot)
 # See ``calculate_metric_response`` for precise definitions.
 _BEST_POSITION_CACHE: Optional[Tuple[float, float, float, float]] = None
 
-# Reasonable cold-start angles if ``Data/bestPosition.txt`` is missing. These are
+# Reasonable cold-start angles if ``data/bestPosition.txt`` is missing. These are
 # **not** guaranteed optimal; run ``bestPosition.py`` to refresh the cache.
 _FALLBACK_BEST_POSITION: Tuple[float, float, float, float] = (
-    0.01,  # source nearly along -z (almost overhead)
+    0.1,  # source nearly along -z (almost overhead)
     0.0,
-    0.01,  # rotor axis mostly in the x-y plane
+    1.0,  # rotor axis mostly in the x-y plane
     0.0,
 )
 
 
 def _parse_best_position_file_text(text: str) -> Optional[Tuple[float, float, float, float]]:
     """
-    Parse the machine-readable ``BEST_POSITION`` line from ``Data/bestPosition.txt``.
+    Parse the machine-readable ``BEST_POSITION`` line from ``data/bestPosition.txt``.
 
     Expected format (single line, four comma-separated floats)::
 
@@ -127,12 +127,12 @@ def _parse_best_position_file_text(text: str) -> Optional[Tuple[float, float, fl
 
 def _get_best_position_defaults() -> Tuple[float, float, float, float]:
     """
-    Return cached angles from Data/bestPosition.txt; read the file at most once per process.
+    Return cached angles from data/bestPosition.txt; read the file at most once per process.
     """
     global _BEST_POSITION_CACHE
     if _BEST_POSITION_CACHE is not None:
         return _BEST_POSITION_CACHE
-    path = Path(__file__).resolve().parent / "Data" / "bestPosition.txt"
+    path = Path(__file__).resolve().parent / "data" / "bestPosition.txt"
     if path.is_file():
         try:
             parsed = _parse_best_position_file_text(path.read_text(encoding="utf-8"))
@@ -307,6 +307,7 @@ def calculate_metric_response(
     phi_src: Optional[float] = None,
     theta_rot: Optional[float] = None,
     phi_rot: Optional[float] = None,
+    R: Optional[float] = None,
 ) -> float:
     """
     Main entry function to compute the strain response at a given time.
@@ -328,8 +329,11 @@ def calculate_metric_response(
     The quadrupole oscillation is still modeled in the rotating body frame, then
     rotated into the detector frame via ``rotation_body_to_detector``.
 
-    Angle arguments default to values from ``Data/bestPosition.txt`` (read once and
+    Angle arguments default to values from ``data/bestPosition.txt`` (read once and
     cached). Pass explicit angles to override; ``None`` means "use the cached value".
+
+    The source distance can also be overridden by passing ``R``. If ``R`` is
+    ``None``, the default distance from ``ExperimentConfig`` is used.
     """
     d1, d2, d3, d4 = _get_best_position_defaults()
     theta_src = d1 if theta_src is None else theta_src
@@ -337,9 +341,8 @@ def calculate_metric_response(
     theta_rot = d3 if theta_rot is None else theta_rot
     phi_rot = d4 if phi_rot is None else phi_rot
 
-    config = ExperimentConfig()
+    config = ExperimentConfig() if R is None else ExperimentConfig(R=float(R))
 
-    # LIGO arm directions are fixed in the detector frame (no longer optimized).
     a_vec = np.array([1.0, 0.0, 0.0], dtype=float)
     b_vec = np.array([0.0, 1.0, 0.0], dtype=float)
 
@@ -349,6 +352,7 @@ def calculate_metric_response(
     t_forward = t - 2.0 * config.L / config.c
     t_return = t - config.L / config.c
 
+    # calculate the time delay in the foward and the back time delay.
     delta_t1 = calculate_delta_t(t_forward, n_src_to_det, a_vec, config, R_body_to_det)
     delta_t_prime1 = calculate_delta_t_prime(t_return, n_src_to_det, a_vec, config, R_body_to_det)
     delay_of_transition_time1 = delta_t1 + delta_t_prime1
@@ -361,10 +365,6 @@ def calculate_metric_response(
     input_signal = delay_of_transition_time_delta * config.c / (2.0 * config.L)
 
     return float(input_signal)
-
-# Alias to maintain backward compatibility for `from metricCalculate import main` in fourier.py
-main = calculate_metric_response
-
 
 def parse_arguments() -> argparse.Namespace:
     """
@@ -408,6 +408,13 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="show detailed output")
     parser.add_argument("-o", "--output", type=str, default=None, help="path for the output file")
+    parser.add_argument(
+        "-R",
+        "--distance",
+        type=str,
+        default=None,
+        help="distance from source to detector in meters (overrides default R)",
+    )
 
     return parser.parse_args()
 
@@ -425,6 +432,7 @@ if __name__ == "__main__":
     phi_src_val = float(args.phisource)
     theta_rot_val = float(args.thetarotation)
     phi_rot_val = float(args.phirotation)
+    source_distance = float(args.distance) if args.distance is not None else None
     
     # Execute main calculation
     result = calculate_metric_response(
@@ -433,6 +441,7 @@ if __name__ == "__main__":
         phi_src_val,
         theta_rot_val,
         phi_rot_val,
+        R=source_distance,
     )
     print(result)
     

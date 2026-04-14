@@ -2,7 +2,10 @@ import numpy as np
 from dataclasses import dataclass, field
 import os
 import matplotlib.pyplot as plt
-from metricCalculate import ExperimentConfig
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts.metricCalculate import ExperimentConfig
 import gwinc
 from gwinc import Struct
 
