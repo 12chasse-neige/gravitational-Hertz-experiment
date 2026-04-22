@@ -54,46 +54,73 @@ def scipy_gradient_descent(
     init_phi_src: float,
     init_theta_rot: float,
     init_phi_rot: float,
+    *,
+    fix_source_angles: bool = False,
 ) -> tuple[float, float, float, float]:
     """
-    Maximize the strain amplitude over the four detector-frame angles.
+    Maximize the strain amplitude over detector-frame angles.
 
-    **Why this is simpler than the old six-angle version.** Arms are no longer free
-    parameters: LIGO arm 1 is ``+x`` and arm 2 is ``+y`` by definition, so the only
-    remaining orientation freedom is the source direction and the rotor axis.
-
-    ``SLSQP`` is kept for familiarity, but the heavy orthogonality constraint on the
-    arms is gone because orthogonality is now structural.
+    When ``fix_source_angles=True``, ``theta_src`` and ``phi_src`` are treated as
+    fixed inputs and only the rotor-axis angles are optimized. This is used by the
+    source-array path where each source location already determines its own sky
+    direction relative to the detector.
     """
 
-    def negative_f(vars: np.ndarray) -> float:
-        theta_src, phi_src, theta_rot, phi_rot = vars
-        return -float(
-            f_scaled(
-                float(theta_src),
-                float(phi_src),
-                float(theta_rot),
-                float(phi_rot),
+    if fix_source_angles:
+        def negative_f(vars: np.ndarray) -> float:
+            theta_rot, phi_rot = vars
+            return -float(
+                f_scaled(
+                    float(init_theta_src),
+                    float(init_phi_src),
+                    float(theta_rot),
+                    float(phi_rot),
+                )
             )
-        )
 
-    bounds = [
-        (0.0, float(np.pi)),
-        (0.0, float(2.0 * np.pi)),
-        (0.0, float(np.pi)),
-        (0.0, float(2.0 * np.pi)),
-    ]
+        x0 = np.array([init_theta_rot, init_phi_rot], dtype=float)
+        bounds = [
+            (0.0, float(np.pi)),
+            (0.0, float(2.0 * np.pi)),
+        ]
+    else:
+        def negative_f(vars: np.ndarray) -> float:
+            theta_src, phi_src, theta_rot, phi_rot = vars
+            return -float(
+                f_scaled(
+                    float(theta_src),
+                    float(phi_src),
+                    float(theta_rot),
+                    float(phi_rot),
+                )
+            )
+
+        x0 = np.array(
+            [init_theta_src, init_phi_src, init_theta_rot, init_phi_rot],
+            dtype=float,
+        )
+        bounds = [
+            (0.0, float(np.pi)),
+            (0.0, float(2.0 * np.pi)),
+            (0.0, float(np.pi)),
+            (0.0, float(2.0 * np.pi)),
+        ]
 
     result = minimize(
         negative_f,
-        x0 = np.array(
-             [init_theta_src, init_phi_src, init_theta_rot, init_phi_rot],
-             dtype=float,
-        ),
+        x0=x0,
         bounds=bounds,
         method="SLSQP",
         options={"disp": True, "ftol": 1e-6, "eps": 1e-5, "maxiter": 500},
     )
+
+    if fix_source_angles:
+        return (
+            float(init_theta_src),
+            float(init_phi_src),
+            float(result.x[0]),
+            float(result.x[1]),
+        )
 
     return float(result.x[0]), float(result.x[1]), float(result.x[2]), float(result.x[3])
 

@@ -466,6 +466,7 @@ def _build_chunk(context: ArrayContext, start: int, stop: int) -> np.ndarray:
                 initial_phi_src,
                 initial_theta_rot,
                 initial_phi_rot,
+                fix_source_angles=True,
             )
             _, _, theta_rot, phi_rot = angles
             theta_rot_list.append(theta_rot)
