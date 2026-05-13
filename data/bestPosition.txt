@@ -1,6 +1,6 @@
 # Detector frame: vertex at origin; arm1 +x; arm2 +y; +z completes RHS.
 # (theta_src, phi_src): unit vector from detector toward the source.
 # (theta_rot, phi_rot): rotor symmetry axis (body +z) in detector frame.
-# Initial guess [rad]: theta_src=0.01000000, phi_src=0.00000000, theta_rot=0.01000000, phi_rot=0.00000000
-BEST_POSITION: 0.53869363, 0.89446624, 1.35121634, 3.10833672
-max_signal_amplitude: 8.543399763509e-37
+# Initial guess [rad]: theta_src=1.00000000, phi_src=0.00000000, theta_rot=1.00000000, phi_rot=0.00000000
+BEST_POSITION: 0.20227104, 5.96344729, 1.72327938, 0.01416633
+max_signal_amplitude: 4.126416856694e-37

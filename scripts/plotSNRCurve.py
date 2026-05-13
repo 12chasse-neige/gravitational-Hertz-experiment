@@ -65,12 +65,12 @@ def plot_3d(rows: list[dict[str, float]], output_path: Path, show: bool) -> None
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Plot a 3D SNR figure from Data/snr_year_table.csv with axes m, l, and snr."
+        description="Plot a 3D SNR figure from data/snr_year_table.csv with axes m, l, and snr."
     )
     parser.add_argument(
         "--input",
-        default="Data/snr_year_table.csv",
-        help="Input CSV path. Default: Data/snr_year_table.csv",
+        default="data/snr_year_table.csv",
+        help="Input CSV path. Default: data/snr_year_table.csv",
     )
     parser.add_argument(
         "--output",
@@ -90,5 +90,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    # rows = load_snr_table(Path("Data/snr_year_table.csv"))
+    # rows = load_snr_table(Path("data/snr_year_table.csv"))
     # plot_2d(rows, Path("images/SNR (2D).png"), show=True)

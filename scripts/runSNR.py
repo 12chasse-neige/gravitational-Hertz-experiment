@@ -1,14 +1,27 @@
+if __package__ in (None, ""):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 import csv
 import os
 import subprocess
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from scripts.fourier import int_time
 import numpy as np
 
-YEAR_SECONDS = 365 * 24 * 3600
+from ghe.config import (
+    DATA_DIR,
+    FREQS_FILE,
+    INT_TIME,
+    MAGNITUDE_FILE,
+    REPO_ROOT,
+    SCRIPTS_DIR,
+    YEAR_SECONDS,
+)
+
 
 def parse_float_list(raw: str) -> list[float]:
     s = raw.strip()
@@ -46,15 +59,16 @@ def parse_float_list(raw: str) -> list[float]:
     return values
 
 
-def run_python_file(script_name: str, env: dict[str, str]) -> None:
-    subprocess.run([sys.executable, script_name], check=True, env=env)
+def run_python_file(script_path: Path, env: dict[str, str]) -> None:
+    subprocess.run([sys.executable, str(script_path)], check=True, env=env, cwd=REPO_ROOT)
 
 
 def calculate_snr_year_from_saved_data(test_mass: float, arm_length: float) -> float:
-    from scripts.quantumNoise import DetectorConfig, squeeze_quantum_noise_with_varying_angle
+    from ghe.config import DetectorConfig
+    from ghe.noise import squeeze_quantum_noise_with_varying_angle
 
-    signal_magnitude = np.load("data/magnitude.npy")
-    freq = np.load("data/freqs.npy")
+    signal_magnitude = np.load(MAGNITUDE_FILE)
+    freq = np.load(FREQS_FILE)
 
     valid_mask = (freq >= 1.0) & (freq <= 5000.0)
     freq_valid = freq[valid_mask]
@@ -65,7 +79,7 @@ def calculate_snr_year_from_saved_data(test_mass: float, arm_length: float) -> f
     integrand = (4.0 * signal_magnitude_valid**2) / total_noise_psd
     df = freq_valid[1] - freq_valid[0]
     snr_1s = np.sqrt(np.sum(integrand) * df)
-    return float(snr_1s * np.sqrt(YEAR_SECONDS / int_time))
+    return float(snr_1s * np.sqrt(YEAR_SECONDS / INT_TIME))
 
 
 def main() -> None:
@@ -95,18 +109,16 @@ def main() -> None:
     masses = parse_float_list(args.masses)
     lengths = parse_float_list(args.lengths)
 
-    repo_root = Path(__file__).resolve().parent
-    os.chdir(repo_root)
-    Path("data").mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     results = []
     for length in lengths:
-        env_for_length = os.environ.copy()
+        env_for_length = dict(os.environ)
         env_for_length["LIGO_ARM_LENGTH"] = str(length)
         print(f"\n[Length {length}] Running bestPosition.py ...")
-        run_python_file("bestPosition.py", env=env_for_length)
+        run_python_file(SCRIPTS_DIR / "bestPosition.py", env=env_for_length)
         print(f"[Length {length}] Running fourier.py ...")
-        run_python_file("fourier.py", env=env_for_length)
+        run_python_file(SCRIPTS_DIR / "fourier.py", env=env_for_length)
 
         for mass in masses:
             snr_year = calculate_snr_year_from_saved_data(test_mass=mass, arm_length=length)

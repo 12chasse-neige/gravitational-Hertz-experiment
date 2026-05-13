@@ -28,7 +28,8 @@ Thumbs.db
 .vscode/
 
 # Local reference material (large or personal copies)
-Reference/
+docs/carbonFiberProperty.pdf
 
 # Large binary not tracked
 carbonFiberProperty.pdf
+AGENTS.md
