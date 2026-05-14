@@ -14,12 +14,12 @@ This project models a gravitational-wave source based on a rotating hole array a
 - CSV and `.npz` source-array storage
 
 ## Module Map
-- `scripts/metricCalculate.py` -> `ghe.metric`, `ghe.geometry`
-- `scripts/bestPosition.py` -> `ghe.optimization`
-- `scripts/sourceArray.py` -> `ghe.source_array.*`
-- `scripts/fourier.py` -> `ghe.spectrum`
-- `scripts/quantumNoise.py` -> `ghe.noise`
-- `scripts/noiseAnalysis.py` -> `ghe.snr`
+- `scr/metricCalculate.py` -> `ghe.metric`, `ghe.geometry`
+- `scr/bestPosition.py` -> `ghe.optimization`
+- `scr/sourceArray.py` -> `ghe.source_array.*`
+- `scr/fourier.py` -> `ghe.spectrum`
+- `scr/quantumNoise.py` -> `ghe.noise`
+- `scr/noiseAnalysis.py` -> `ghe.snr`
 - `main.py` -> `ghe.signal`, `ghe.spectrum`, `ghe.snr`
 
 The scripts are now thin compatibility wrappers. New reusable code should go in `ghe/`.
@@ -51,31 +51,35 @@ The scripts are now thin compatibility wrappers. New reusable code should go in 
 - Optional workflows:
 	- Optimize geometry:
 		```bash
-		python scripts/bestPosition.py
+		python scr/bestPosition.py
 		```
 	- Generate FFT data and plots:
 		```bash
-		python scripts/fourier.py
+		python scr/fourier.py
 		```
 	- Compute SNR from saved signal spectra:
 		```bash
-		python scripts/noiseAnalysis.py
+		python scr/noiseAnalysis.py
+		```
+	- Compare gwinc, previous, and detuned signal-recycling noise curves:
+		```bash
+		python scr/quantumNoise.py --comparison-only
 		```
 	- Sweep arm length and test mass:
 		```bash
-		python scripts/runSNR.py --masses "20,39.6,80" --lengths "[1000,4000,1000]"
+		python scr/runSNR.py --masses "20,39.6,80" --lengths "[1000,4000,1000]"
 		```
 	- Plot SNR results:
 		```bash
-		python scripts/plotSNRCurve.py --input data/snr_year_table.csv --output "images/SNR (3D).png"
+		python scr/plotSNRCurve.py --input data/snr_year_table.csv --output "img/SNR (3D).png"
 		```
 	- Preview a source array:
 		```bash
-		python scripts/sourceArray.py --summary-only --num-sources 1000
+		python scr/sourceArray.py --summary-only --num-sources 1000
 		```
 	- Generate binary source-array data:
 		```bash
-		python scripts/sourceArray.py --num-sources 1000 --format npz
+		python scr/sourceArray.py --num-sources 1000 --format npz
 		```
 
 ## Output Files
@@ -85,7 +89,7 @@ The scripts are now thin compatibility wrappers. New reusable code should go in 
 - `data/source_array_distribution.csv`: compatibility source-array table
 - `data/source_array_distribution.npz`: preferred binary source-array table for generated small and medium arrays
 - `data/snr_year_table.csv`: SNR sweep results
-- `images/Signal.png`, `images/Fouriered Signal.png`: Plots
+- `img/Signal.png`, `img/Fouriered Signal.png`, `img/Quantum Noise (Curve Comparison).png`: Plots
 - `runs/<name>/`: optional reproducible run output created with `python main.py --run-dir runs/<name>`
 
 ## Notes

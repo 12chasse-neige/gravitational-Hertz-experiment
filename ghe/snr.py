@@ -19,7 +19,7 @@ from typing import Callable
 import numpy as np
 
 from .config import DetectorConfig, NoiseConfig, SamplingConfig
-from .noise import squeeze_quantum_noise_with_varying_angle
+from .noise import get_noise_psd
 from .paths import FREQS_FILE, MAGNITUDE_FILE, YEAR_SECONDS
 
 
@@ -36,7 +36,7 @@ def calculate_snr_from_arrays(
     Calculate 1-year SNR from in-memory spectrum arrays.
 
     ``noise_psd_func`` is injectable for tests and model comparisons.  When it is
-    omitted, the package uses the frequency-dependent squeezed quantum-noise PSD.
+    omitted, the package uses the model selected by ``NoiseConfig.model``.
     """
 
     active_noise = noise_config or NoiseConfig()
@@ -56,10 +56,10 @@ def calculate_snr_from_arrays(
         )
 
     if noise_psd_func is None:
-        total_noise_psd = squeeze_quantum_noise_with_varying_angle(
+        total_noise_psd = get_noise_psd(
             freq_valid,
-            squeeze_db=active_noise.squeeze_db,
-            config=active_detector,
+            noise_config=active_noise,
+            detector_config=active_detector,
         )
     else:
         total_noise_psd = noise_psd_func(freq_valid)

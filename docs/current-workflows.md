@@ -5,11 +5,12 @@ These are the compatibility commands preserved by the package refactor.
 ```bash
 python main.py
 python main.py --renew-source-array --source-array-num-sources 100 --source-array-chunk-size 10
-python scripts/sourceArray.py --summary-only --num-sources 1000
-python scripts/sourceArray.py --summary-only --num-sources 1000 --chunk-center-approximation
-python scripts/fourier.py
-python scripts/noiseAnalysis.py
-python scripts/runSNR.py --masses "20,39.6,80" --lengths "[1000,4000,1000]"
+python scr/sourceArray.py --summary-only --num-sources 1000
+python scr/sourceArray.py --summary-only --num-sources 1000 --chunk-center-approximation
+python scr/fourier.py
+python scr/quantumNoise.py --comparison-only
+python scr/noiseAnalysis.py
+python scr/runSNR.py --masses "20,39.6,80" --lengths "[1000,4000,1000]"
 ```
 
 Representative saved baseline values from the current `data/` artifacts:

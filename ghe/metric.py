@@ -13,7 +13,7 @@ The calculation follows the physical model in ``docs/theoreticalDerivation.md``:
 7. Return the differential arm response as dimensionless strain.
 
 This module deliberately requires explicit source and rotor angles.  The legacy
-``data/bestPosition.txt`` default lookup lives only in ``scripts.metricCalculate``.
+``data/bestPosition.txt`` default lookup lives only in ``scr.metricCalculate``.
 """
 
 from __future__ import annotations
@@ -191,7 +191,7 @@ def calculate_metric_response(
     ``(delay_arm_x - delay_arm_y) * c / (2L)``.
 
     The legacy best-position default lookup is intentionally kept in
-    ``scripts.metricCalculate``.
+    ``scr.metricCalculate``.
     """
 
     active_config = config or SourceConfig()

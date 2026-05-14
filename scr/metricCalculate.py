@@ -12,7 +12,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from ghe.config import BEST_POSITION_FILE, IMAGES_DIR, ExperimentConfig, build_time_axis
+from ghe.config import BEST_POSITION_FILE, IMG_DIR, ExperimentConfig, build_time_axis
 from ghe.geometry import rotation_body_to_detector, spherical_unit_vector
 from ghe.metric import (
     calculate_delta_t,
@@ -123,7 +123,7 @@ def signal_test() -> None:
     plt.xlabel("Time [s]")
     plt.ylabel("Signal [1]")
     plt.title("Input Signal Curve")
-    plt.savefig(IMAGES_DIR / "Signal.png")
+    plt.savefig(IMG_DIR / "Signal.png")
 
 
 if __name__ == "__main__":

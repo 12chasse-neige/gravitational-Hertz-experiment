@@ -1,7 +1,7 @@
 """
 Reusable package APIs for the Gravitational Hertz Experiment.
 
-The legacy scripts in ``scripts/`` remain as command-line compatibility wrappers.
+The legacy scripts in ``scr/`` remain as command-line compatibility wrappers.
 New numerical code should live in this package.
 """
 

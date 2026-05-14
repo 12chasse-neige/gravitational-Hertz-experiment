@@ -219,6 +219,10 @@ $$
 D_1 = -(1 + \rho e^{2i(\beta + \Phi)}) \sin \phi, \quad D_2 = -(-1 + \rho e^{2i(\beta + \Phi)}) \cos \phi
 $$
 
+\[
+\phi = \left. \frac{\omega_{o} l}{c} \right|_{\text{mod} \, 2 \pi}  \quad \Phi = \left. \frac{\Omega l}{c} \right|_{\text{mod} \, 2 \pi}
+\]
+
 When we induce squeezing to  further reduce the quantum noise, we can get the psd curve for the squeezed noise[^3] 
 \[
 S_{h} = \frac{\begin{pmatrix}\cos \zeta & \sin \zeta \end{pmatrix} \mathbb{T} \mathcal{D} (- \lambda) \mathcal{S} (2r) \mathcal{D} (\lambda) \mathbb{T}^{\dagger} \begin{pmatrix} \cos \zeta \\ \sin \zeta \end{pmatrix}}{\begin{pmatrix}\cos \zeta & \sin \zeta \end{pmatrix} \bar{s} \bar{s}^{\dagger} \begin{pmatrix} \cos \zeta \\ \sin \zeta \end{pmatrix}}
@@ -240,8 +244,11 @@ $$
 M = 1 + \rho^2 \mathrm{e}^{4\imath\Phi} - 2\rho \mathrm{e}^{2\imath\Phi} \left( \cos(2\phi) + \frac{K}{2} \sin(2\phi) \right)
 $$
 
-The signal transfer functions $\bar{s}$ for the two quadratures are given by
+\[
+\phi = \left. \frac{\omega_{o} l}{c} \right|_{\text{mod} \, 2 \pi} \quad \Phi = \arctan \frac{\Omega}{\gamma}
+\]
 
+The signal transfer functions $\bar{s}$ for the two quadratures are given by
 $$
 \bar{s}_1 = -\frac{\sqrt{2K}}{h_{\mathrm{SQL}}} \tau \left( 1 + \rho \mathrm{e}^{2\imath\Phi} \right) \sin(\phi)
 $$
@@ -264,7 +271,7 @@ e^{r} & 0 \\
 Fixing $\zeta = \frac{\pi}{2}$, and using frequency-dependent squeezing to get the best noise (which means that the squeezing matrices are equivalent to an $e^{-r}$ factor), the psd curve in our project is
 \[
 S_{h} = e^{-2r} \frac{T_{21} T_{21}^{*} + T_{22} T_{22}^{*}}{s_{2} s_{2}^{*}} \\ =
-\frac{h^{2}_{SQL} e^{-2r}}{2 \mathcal{K}} \frac{(1 - \rho^{2})^{2} \left( \sin(2\phi) - \mathcal{K} \cos^2(\phi) \right)^{2} + \left[ (1 + \rho^2) \left( \cos(2\phi) + \frac{K}{2} \sin(2\phi) \right) - 2\rho \cos(2\Phi) \right]^{2}}{ (1 - \rho^{2}) \cos^{2} \phi (1 - 2 \rho \cos (2 \Phi) + \rho^{2})}
+\frac{h^{2}_{SQL} e^{-2r}}{2 \mathcal{K}} \frac{(1 - \rho^{2})^{2} \left( \sin(2\phi) - \mathcal{K} \cos^2(\phi) \right)^{2} + \left[ (1 + \rho^2) \left( \cos(2\phi) + \frac{\mathcal{K}}{2} \sin(2\phi) \right) - 2\rho \cos(2\Phi) \right]^{2}}{ (1 - \rho^{2}) \cos^{2} \phi (1 - 2 \rho \cos (2 \Phi) + \rho^{2})}
 \]
 
 

@@ -74,8 +74,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default=f"images/SNR (3D).png",
-        help="Output figure path. Default: images/SNR (3D).png",
+        default=f"img/SNR (3D).png",
+        help="Output figure path. Default: img/SNR (3D).png",
     )
     parser.add_argument(
         "--show",
@@ -91,4 +91,4 @@ def main() -> None:
 if __name__ == "__main__":
     main()
     # rows = load_snr_table(Path("data/snr_year_table.csv"))
-    # plot_2d(rows, Path("images/SNR (2D).png"), show=True)
+    # plot_2d(rows, Path("img/SNR (2D).png"), show=True)

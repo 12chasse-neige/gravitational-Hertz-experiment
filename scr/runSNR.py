@@ -18,7 +18,7 @@ from ghe.config import (
     INT_TIME,
     MAGNITUDE_FILE,
     REPO_ROOT,
-    SCRIPTS_DIR,
+    SCR_DIR,
     YEAR_SECONDS,
 )
 
@@ -63,9 +63,13 @@ def run_python_file(script_path: Path, env: dict[str, str]) -> None:
     subprocess.run([sys.executable, str(script_path)], check=True, env=env, cwd=REPO_ROOT)
 
 
-def calculate_snr_year_from_saved_data(test_mass: float, arm_length: float) -> float:
-    from ghe.config import DetectorConfig
-    from ghe.noise import squeeze_quantum_noise_with_varying_angle
+def calculate_snr_year_from_saved_data(
+    test_mass: float,
+    arm_length: float,
+    noise_model: str | None = None,
+) -> float:
+    from ghe.config import DetectorConfig, NoiseConfig
+    from ghe.noise import get_noise_psd
 
     signal_magnitude = np.load(MAGNITUDE_FILE)
     freq = np.load(FREQS_FILE)
@@ -74,7 +78,12 @@ def calculate_snr_year_from_saved_data(test_mass: float, arm_length: float) -> f
     freq_valid = freq[valid_mask]
     signal_magnitude_valid = signal_magnitude[valid_mask]
     detector_config = DetectorConfig(testmass=test_mass, length=arm_length)
-    total_noise_psd = squeeze_quantum_noise_with_varying_angle(freq_valid, config=detector_config)
+    noise_config = NoiseConfig(model=noise_model) if noise_model is not None else NoiseConfig()
+    total_noise_psd = get_noise_psd(
+        freq_valid,
+        noise_config=noise_config,
+        detector_config=detector_config,
+    )
 
     integrand = (4.0 * signal_magnitude_valid**2) / total_noise_psd
     df = freq_valid[1] - freq_valid[0]
@@ -104,6 +113,14 @@ def main() -> None:
         default="data/snr_year_table.csv",
         help="Output CSV path. Default: data/snr_year_table.csv",
     )
+    parser.add_argument(
+        "--noise-model",
+        default=None,
+        help=(
+            "Detector noise model. Use 'frequency_dependent_squeezed'/'previous' "
+            "or 'detuned_signal_recycling'/'detuned'. Defaults to GHE_NOISE_MODEL."
+        ),
+    )
     args = parser.parse_args()
 
     masses = parse_float_list(args.masses)
@@ -116,12 +133,16 @@ def main() -> None:
         env_for_length = dict(os.environ)
         env_for_length["LIGO_ARM_LENGTH"] = str(length)
         print(f"\n[Length {length}] Running bestPosition.py ...")
-        run_python_file(SCRIPTS_DIR / "bestPosition.py", env=env_for_length)
+        run_python_file(SCR_DIR / "bestPosition.py", env=env_for_length)
         print(f"[Length {length}] Running fourier.py ...")
-        run_python_file(SCRIPTS_DIR / "fourier.py", env=env_for_length)
+        run_python_file(SCR_DIR / "fourier.py", env=env_for_length)
 
         for mass in masses:
-            snr_year = calculate_snr_year_from_saved_data(test_mass=mass, arm_length=length)
+            snr_year = calculate_snr_year_from_saved_data(
+                test_mass=mass,
+                arm_length=length,
+                noise_model=args.noise_model,
+            )
             print(f"[Length {length}, Mass {mass}] snr_year = {snr_year:.6e}")
             results.append(
                 {

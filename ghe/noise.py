@@ -17,7 +17,32 @@ from __future__ import annotations
 
 import numpy as np
 
-from .config import DetectorConfig
+from .config import DetectorConfig, NoiseConfig
+
+
+DEFAULT_NOISE_MODEL = "frequency_dependent_squeezed"
+DETUNED_SIGNAL_RECYCLING_NOISE_MODEL = "detuned_signal_recycling"
+
+_NOISE_MODEL_ALIASES = {
+    DEFAULT_NOISE_MODEL: DEFAULT_NOISE_MODEL,
+    "previous": DEFAULT_NOISE_MODEL,
+    "squeezed": DEFAULT_NOISE_MODEL,
+    "frequency_dependent": DEFAULT_NOISE_MODEL,
+    "frequency_dependent_squeezing": DEFAULT_NOISE_MODEL,
+    DETUNED_SIGNAL_RECYCLING_NOISE_MODEL: DETUNED_SIGNAL_RECYCLING_NOISE_MODEL,
+    "detuned": DETUNED_SIGNAL_RECYCLING_NOISE_MODEL,
+    "detuned_sr": DETUNED_SIGNAL_RECYCLING_NOISE_MODEL,
+}
+
+
+def normalize_noise_model(model: str) -> str:
+    """Return the canonical name for a supported detector-noise model."""
+
+    try:
+        return _NOISE_MODEL_ALIASES[model.strip().lower()]
+    except KeyError as exc:
+        choices = ", ".join(sorted(set(_NOISE_MODEL_ALIASES.values())))
+        raise ValueError(f"Unknown noise model {model!r}. Choose one of: {choices}") from exc
 
 
 def get_laser_power_in_cavity(inputPower: float, config: DetectorConfig | None = None) -> float:
@@ -151,3 +176,82 @@ def squeeze_quantum_noise_with_varying_angle(
     h_sql_sq = get_standard_quantum_limit(gravitationalWaveOmega, config=active_config) ** 2
     kappa = get_coupling_constant(gravitationalWaveOmega, config=active_config)
     return (h_sql_sq / 2.0) * (kappa + 1 / kappa) * np.exp(-2.0 * r)
+
+
+def get_detuned_signal_recycling_noise_psd(
+    freq: float | np.ndarray,
+    squeeze_db: float = 10.0,
+    config: DetectorConfig | None = None,
+) -> np.ndarray:
+    """
+    Return the squeezed detuned signal-recycling quantum-noise PSD.
+
+    This implements the project formula in ``docs/theoreticalDerivation.md`` for
+    ``zeta = pi/2`` with ideal frequency-dependent squeezing.  The SR mirror
+    power transmittance is ``DetectorConfig.T_SRM`` and the SR cavity length is
+    ``DetectorConfig.length_SR``.
+    """
+
+    active_config = config or DetectorConfig()
+    if active_config.T_SRM <= 0.0 or active_config.T_SRM > 1.0:
+        raise ValueError("DetectorConfig.T_SRM must be in the interval (0, 1].")
+
+    freq = np.asarray(freq, dtype=float)
+    gravitationalWaveOmega = 2 * np.pi * freq
+    r = squeeze_db_to_r(squeeze_db)
+    h_sql_sq = get_standard_quantum_limit(gravitationalWaveOmega, config=active_config) ** 2
+    kappa = get_coupling_constant(gravitationalWaveOmega, config=active_config)
+
+    laser_omega = 2 * np.pi * active_config.c / active_config.wavelength
+    gamma = active_config.T_ITM * active_config.c / (4 * active_config.length)
+    phi = np.mod(laser_omega * active_config.length_SR / active_config.c, 2 * np.pi)
+    phi_fp = np.arctan(gravitationalWaveOmega / gamma) + np.mod(gravitationalWaveOmega * active_config.length_SR / active_config.c, 2 * np.pi)
+
+    rho_sq = 1.0 - active_config.T_SRM
+    rho = np.sqrt(rho_sq)
+    tau_sq = active_config.T_SRM
+
+    cos_phi = np.cos(phi)
+    sin_2phi = np.sin(2 * phi)
+    cos_2phi = np.cos(2 * phi)
+    cos_2phi_fp = np.cos(2 * phi_fp)
+
+    radiation_term = tau_sq**2 * (sin_2phi - kappa * cos_phi**2) ** 2
+    shot_term = (
+        (1 + rho_sq) * (cos_2phi + 0.5 * kappa * sin_2phi)
+        - 2 * rho * cos_2phi_fp
+    ) ** 2
+    signal_response = tau_sq * cos_phi**2 * (1 - 2 * rho * cos_2phi_fp + rho_sq)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return (
+            (h_sql_sq * np.exp(-2.0 * r) / (2.0 * kappa))
+            * (radiation_term + shot_term)
+            / signal_response
+        )
+
+
+def get_noise_psd(
+    freq: float | np.ndarray,
+    *,
+    noise_config: NoiseConfig | None = None,
+    detector_config: DetectorConfig | None = None,
+    model: str | None = None,
+) -> np.ndarray:
+    """Return detector quantum-noise PSD for the selected model."""
+
+    active_noise = noise_config or NoiseConfig()
+    active_model = normalize_noise_model(model or active_noise.model)
+    if active_model == DEFAULT_NOISE_MODEL:
+        return squeeze_quantum_noise_with_varying_angle(
+            freq,
+            squeeze_db=active_noise.squeeze_db,
+            config=detector_config,
+        )
+    if active_model == DETUNED_SIGNAL_RECYCLING_NOISE_MODEL:
+        return get_detuned_signal_recycling_noise_psd(
+            freq,
+            squeeze_db=active_noise.squeeze_db,
+            config=detector_config,
+        )
+    raise AssertionError(f"Unhandled normalized noise model: {active_model}")

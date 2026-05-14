@@ -8,12 +8,12 @@ if __package__ in (None, ""):
 
 import numpy as np
 
-from ghe.config import FREQS_FILE, IMAGES_DIR, INT_TIME, MAGNITUDE_FILE, NUM, build_time_axis
+from ghe.config import FREQS_FILE, IMG_DIR, INT_TIME, MAGNITUDE_FILE, NUM, build_time_axis
 from ghe.spectrum import fourier
 
 
 def build_default_signal() -> np.ndarray:
-    from scripts.metricCalculate import calculate_metric_response
+    from scr.metricCalculate import calculate_metric_response
 
     time_axis = build_time_axis()
     return np.array([calculate_metric_response(ti) for ti in time_axis], dtype=float)
@@ -36,7 +36,7 @@ def plot(inputSignal, fft_magnitude, freqs, time_axis=None):
     axes[1].set_xlim(1, 1000)
 
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / "Fouriered Signal.png")
+    plt.savefig(IMG_DIR / "Fouriered Signal.png")
 
 
 def main():

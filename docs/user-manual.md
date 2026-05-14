@@ -1,8 +1,8 @@
 # Gravitational Hertz Experiment 使用手册
 
-本文档说明当前重构后的项目结构、计算逻辑、常用命令和输出文件。项目现在采用“`ghe/` 作为核心 Python 包，`scripts/` 作为兼容命令行入口”的结构。
+本文档说明当前重构后的项目结构、计算逻辑、常用命令和输出文件。项目现在采用“`ghe/` 作为核心 Python 包，`scr/` 作为兼容命令行入口”的结构。
 
-## 1. `scripts/` 现在还需要吗？
+## 1. `scr/` 现在还需要吗？
 
 需要，暂时不建议删除。
 
@@ -10,22 +10,22 @@
 
 ```bash
 python main.py
-python scripts/sourceArray.py ...
-python scripts/bestPosition.py
-python scripts/fourier.py
-python scripts/noiseAnalysis.py
-python scripts/quantumNoise.py
-python scripts/runSNR.py ...
-python scripts/plotSNRCurve.py ...
+python scr/sourceArray.py ...
+python scr/bestPosition.py
+python scr/fourier.py
+python scr/noiseAnalysis.py
+python scr/quantumNoise.py
+python scr/runSNR.py ...
+python scr/plotSNRCurve.py ...
 ```
 
 所以现在的判断是：
 
 - `ghe/`：真实计算逻辑，后续新代码应优先写在这里。
-- `scripts/`：兼容旧工作流的薄包装器，仍然承担 CLI 入口职责。
-- 暂时不删除 `scripts/`，否则 README 和 `docs/current-workflows.md` 中记录的命令会失效。
+- `scr/`：兼容旧工作流的薄包装器，仍然承担 CLI 入口职责。
+- 暂时不删除 `scr/`，否则 README 和 `docs/current-workflows.md` 中记录的命令会失效。
 
-将来如果想删除 `scripts/`，建议先完成这些替代工作：
+将来如果想删除 `scr/`，建议先完成这些替代工作：
 
 1. 为主要功能增加 `python -m ghe...` 或 console script 命令。
 2. 更新 README、本文档和测试中的命令。
@@ -36,7 +36,7 @@ python scripts/plotSNRCurve.py ...
 ```text
 ghe/
   config.py                 # 物理参数、采样参数、噪声参数、运行配置
-  paths.py                  # data/images/runs 等项目路径
+  paths.py                  # data/img/runs 等项目路径
   geometry.py               # 球坐标、笛卡尔坐标、旋转、向量搬运
   metric.py                 # 单个机械源到探测器响应的核心计算
   optimization.py           # 最优单源几何优化
@@ -52,12 +52,12 @@ ghe/
     io.py                   # CSV / NPZ 读写
     generation.py           # 源阵列生成总控
 
-scripts/
+scr/
   *.py                      # 兼容 CLI；内部调用 ghe/ 包
 
 main.py                     # 总入口：源阵列信号 -> FFT -> SNR
 data/                       # 默认数据输出
-images/                     # 默认图片输出
+img/                     # 默认图片输出
 runs/                       # 可选的可复现实验输出目录
 ```
 
@@ -139,7 +139,7 @@ h(t) = (delay_x - delay_y) * c / (2L)
 主要文件：
 
 - `ghe/optimization.py`
-- `scripts/bestPosition.py`
+- `scr/bestPosition.py`
 
 优化变量有四个：
 
@@ -168,7 +168,7 @@ data/bestPosition.json
 重新优化命令：
 
 ```bash
-python scripts/bestPosition.py
+python scr/bestPosition.py
 ```
 
 ### 3.4 源阵列生成
@@ -215,25 +215,25 @@ rotor_phase_offset_rad
 
 ```bash
 # 只看摘要和前几行，不写文件
-python scripts/sourceArray.py --summary-only --num-sources 1000
+python scr/sourceArray.py --summary-only --num-sources 1000
 
 # 快速刚性近似，不逐源优化
-python scripts/sourceArray.py --num-sources 1000 --no-optimize-each-source
+python scr/sourceArray.py --num-sources 1000 --no-optimize-each-source
 
 # chunk-anchor 近似
-python scripts/sourceArray.py \
+python scr/sourceArray.py \
   --num-sources 1000 \
   --chunk-center-approximation \
   --approximation-chunk-size 100
 
 # 写 NPZ，推荐给后续程序读取
-python scripts/sourceArray.py \
+python scr/sourceArray.py \
   --num-sources 1000 \
   --no-optimize-each-source \
   --format npz
 
 # 同时写 CSV 和 NPZ
-python scripts/sourceArray.py \
+python scr/sourceArray.py \
   --num-sources 1000 \
   --no-optimize-each-source \
   --format both
@@ -271,7 +271,7 @@ for source_chunk:
 主要文件：
 
 - `ghe/spectrum.py`
-- `scripts/fourier.py`
+- `scr/fourier.py`
 
 FFT 使用原项目的归一化：
 
@@ -285,7 +285,7 @@ magnitude = abs(fft_phys)
 生成单源 FFT：
 
 ```bash
-python scripts/fourier.py
+python scr/fourier.py
 ```
 
 输出：
@@ -293,7 +293,7 @@ python scripts/fourier.py
 ```text
 data/freqs.npy
 data/magnitude.npy
-images/Fouriered Signal.png
+img/Fouriered Signal.png
 ```
 
 ### 3.7 量子噪声模型
@@ -301,7 +301,7 @@ images/Fouriered Signal.png
 主要文件：
 
 - `ghe/noise.py`
-- `scripts/quantumNoise.py`
+- `scr/quantumNoise.py`
 
 噪声计算链路：
 
@@ -316,14 +316,21 @@ images/Fouriered Signal.png
 画 quantum noise 对比图：
 
 ```bash
-python scripts/quantumNoise.py
+python scr/quantumNoise.py
+```
+
+只画 `gwinc`、旧的频率依赖压缩曲线、detuned signal recycling 曲线三者对比：
+
+```bash
+python scr/quantumNoise.py --comparison-only
 ```
 
 输出：
 
 ```text
-images/Quantum Noise (Before Squeezing).png
-images/Quantum Noise (After Squeezing).png
+img/Quantum Noise (Before Squeezing).png
+img/Quantum Noise (After Squeezing).png
+img/Quantum Noise (Curve Comparison).png
 ```
 
 ### 3.8 SNR 积分
@@ -331,7 +338,7 @@ images/Quantum Noise (After Squeezing).png
 主要文件：
 
 - `ghe/snr.py`
-- `scripts/noiseAnalysis.py`
+- `scr/noiseAnalysis.py`
 
 SNR 公式保持原项目约定：
 
@@ -349,7 +356,7 @@ SNR_year = SNR * sqrt(YEAR_SECONDS / integration_time)
 从保存的单源频谱计算 SNR：
 
 ```bash
-python scripts/noiseAnalysis.py
+python scr/noiseAnalysis.py
 ```
 
 从 `main.py` 产生的总阵列频谱计算时，`main.py` 会自动调用对应 SNR 流程。
@@ -373,7 +380,7 @@ python -m pytest -q
 ### 4.3 快速检查当前数据的 SNR
 
 ```bash
-python scripts/noiseAnalysis.py
+python scr/noiseAnalysis.py
 ```
 
 ### 4.4 生成一个小源阵列并跑完整流程
@@ -429,7 +436,7 @@ runs/small-rigid-test/
 ### 4.6 只生成源阵列，不跑 SNR
 
 ```bash
-python scripts/sourceArray.py \
+python scr/sourceArray.py \
   --num-sources 1000 \
   --no-optimize-each-source \
   --format npz
@@ -438,7 +445,7 @@ python scripts/sourceArray.py \
 ### 4.7 对 arm length 和 test mass 做参数扫描
 
 ```bash
-python scripts/runSNR.py \
+python scr/runSNR.py \
   --masses "20,39.6,80" \
   --lengths "[1000,4000,1000]" \
   --output data/snr_year_table.csv
@@ -447,9 +454,9 @@ python scripts/runSNR.py \
 画图：
 
 ```bash
-python scripts/plotSNRCurve.py \
+python scr/plotSNRCurve.py \
   --input data/snr_year_table.csv \
-  --output "images/SNR (3D).png"
+  --output "img/SNR (3D).png"
 ```
 
 ## 5. Python API 用法
@@ -531,7 +538,7 @@ data/snr_year_table.csv
 参数扫描输出。
 
 ```text
-images/*.png
+img/*.png
 ```
 
 绘图输出。
@@ -549,7 +556,7 @@ runs/<name>/
 3. `--chunk-center-approximation` 是速度和精度之间的折中。
 4. CSV 适合人工检查，NPZ 更适合大规模程序读取。
 5. 修改 `ghe/spectrum.py` 的 FFT 归一化或 `ghe/snr.py` 的 SNR 公式会改变物理结果，需要单独验证。
-6. `scripts/` 仍是命令行入口，不要在没有替代 CLI 的情况下删除。
+6. `scr/` 仍是命令行入口，不要在没有替代 CLI 的情况下删除。
 
 ## 8. 当前建议的开发规则
 

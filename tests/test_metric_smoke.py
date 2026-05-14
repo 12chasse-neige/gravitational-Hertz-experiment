@@ -4,7 +4,7 @@ import numpy as np
 
 from ghe.metric import calculate_metric_response
 from ghe.optimization import load_best_geometry
-from scripts.metricCalculate import calculate_metric_response as legacy_calculate_metric_response
+from scr.metricCalculate import calculate_metric_response as legacy_calculate_metric_response
 
 
 def test_explicit_metric_matches_legacy_default() -> None:
