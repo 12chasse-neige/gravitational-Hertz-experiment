@@ -85,8 +85,8 @@ runs/                       # 可选的可复现实验输出目录
 
 重要配置类：
 
-- `SourceConfig`：机械源参数和单源响应使用的物理常数，例如 `R`、`omega`、`L`、`G`、`c`。
-- `DetectorConfig`：量子噪声模型中的探测器参数，例如 test mass、arm length、laser power、mirror transmission。
+- `SourceConfig`：机械源参数和单源响应使用的物理常数，例如 `R`、`omega`、`L`、`G`、`c`；其中 `R` 自动保持为 `1.5 * L`。
+- `DetectorConfig`：量子噪声模型中的探测器参数，例如 test mass、arm length、laser power、mirror transmission；在 `RunConfig` 中 arm length 会与 `SourceConfig.L` 保持一致。
 - `SamplingConfig`：时域采样窗口和采样率。
 - `SourceArrayConfig`：源阵列生成参数。
 - `NoiseConfig`：SNR 积分频段和 squeezing dB。
@@ -97,11 +97,11 @@ runs/                       # 可选的可复现实验输出目录
 ```bash
 GHE_INT_TIME=0.01             # 时域积分窗口，单位 s
 GHE_SAMPLE_RATE_HZ=120000     # 采样率，单位 Hz
-LIGO_ARM_LENGTH=1000          # metric 中 SourceConfig.L 默认值，同时影响部分旧流程
+LIGO_ARM_LENGTH=1000          # SourceConfig.L 和 DetectorConfig.length 默认值
 LIGO_TEST_MASS=39.6           # noise 中 DetectorConfig.testmass 默认值
 ```
 
-注意：历史代码里 source-side arm length 和 detector noise arm length 的默认值不完全相同。现在它们已经被分到 `SourceConfig` 和 `DetectorConfig`，但旧流程仍然保留环境变量兼容。
+注意：`DetectorConfig.phi_SR` 默认由 `ghe/phase.py` 按机械源的主导 GW 频率求解，使 signal-recycling resonance 对准源频率。
 
 ### 3.2 单个机械源的 metric 响应
 

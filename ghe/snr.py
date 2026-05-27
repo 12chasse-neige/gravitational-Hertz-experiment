@@ -6,8 +6,10 @@ integration follows the original project convention:
 
     SNR = sqrt(sum(4 * |h(f)|^2 / S_h(f)) * df)
 
-The result is then scaled from the sampled integration time to one year by
-``sqrt(YEAR_SECONDS / duration_s)``.
+By default, the sampled integration time is inferred from the spectrum spacing
+as ``duration_s = 1 / df``.  This keeps saved spectra self-contained: changing
+the current sampling configuration does not change the SNR of an unchanged
+``freq``/``magnitude`` pair.
 """
 
 from __future__ import annotations
@@ -21,6 +23,29 @@ import numpy as np
 from .config import DetectorConfig, NoiseConfig, SamplingConfig
 from .noise import get_noise_psd
 from .paths import FREQS_FILE, MAGNITUDE_FILE, YEAR_SECONDS
+
+
+def infer_duration_from_frequency_spacing(freq: np.ndarray) -> float:
+    """
+    Infer the time-domain duration represented by evenly spaced FFT bins.
+
+    ``scipy.fft.rfftfreq`` produces bins separated by ``1 / duration_s``.  The
+    zero-frequency bin may already be omitted, so only spacing matters here.
+    """
+
+    freq = np.asarray(freq, dtype=float)
+    if freq.size < 2:
+        raise ValueError("Frequency array must contain at least two bins.")
+
+    diffs = np.diff(freq)
+    if not np.all(np.isfinite(diffs)) or np.any(diffs <= 0.0):
+        raise ValueError("Frequency array must be finite and strictly increasing.")
+
+    df = float(np.median(diffs))
+    if not np.allclose(diffs, df, rtol=1e-9, atol=max(abs(df) * 1e-12, 1e-15)):
+        raise ValueError("Frequency bins must be evenly spaced to infer duration.")
+
+    return 1.0 / df
 
 
 def calculate_snr_from_arrays(
@@ -37,11 +62,12 @@ def calculate_snr_from_arrays(
 
     ``noise_psd_func`` is injectable for tests and model comparisons.  When it is
     omitted, the package uses the model selected by ``NoiseConfig.model``.
+    ``sampling_config`` is accepted for API compatibility; duration is inferred
+    from ``freq`` so the spectrum stays self-consistent.
     """
 
     active_noise = noise_config or NoiseConfig()
     active_detector = detector_config or DetectorConfig()
-    active_sampling = sampling_config or SamplingConfig()
 
     signal_magnitude = np.asarray(signal_magnitude, dtype=float)
     freq = np.asarray(freq, dtype=float)
@@ -69,7 +95,8 @@ def calculate_snr_from_arrays(
     integrand = (4.0 * signal_magnitude_valid**2) / total_noise_psd
     df = freq_valid[1] - freq_valid[0]
     snr = np.sqrt(np.sum(integrand) * df)
-    return float(snr * np.sqrt(YEAR_SECONDS / active_sampling.duration_s))
+    duration_s = infer_duration_from_frequency_spacing(freq_valid)
+    return float(snr * np.sqrt(YEAR_SECONDS / duration_s))
 
 
 def calculate_snr(

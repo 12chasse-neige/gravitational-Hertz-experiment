@@ -15,11 +15,9 @@ import numpy as np
 from ghe.config import (
     DATA_DIR,
     FREQS_FILE,
-    INT_TIME,
     MAGNITUDE_FILE,
     REPO_ROOT,
     SCR_DIR,
-    YEAR_SECONDS,
 )
 
 
@@ -69,26 +67,18 @@ def calculate_snr_year_from_saved_data(
     noise_model: str | None = None,
 ) -> float:
     from ghe.config import DetectorConfig, NoiseConfig
-    from ghe.noise import get_noise_psd
+    from ghe.snr import calculate_snr_from_arrays
 
     signal_magnitude = np.load(MAGNITUDE_FILE)
     freq = np.load(FREQS_FILE)
-
-    valid_mask = (freq >= 1.0) & (freq <= 5000.0)
-    freq_valid = freq[valid_mask]
-    signal_magnitude_valid = signal_magnitude[valid_mask]
     detector_config = DetectorConfig(testmass=test_mass, length=arm_length)
-    noise_config = NoiseConfig(model=noise_model) if noise_model is not None else NoiseConfig()
-    total_noise_psd = get_noise_psd(
-        freq_valid,
+    noise_config = NoiseConfig(model=noise_model) if noise_model is not None else None
+    return calculate_snr_from_arrays(
+        signal_magnitude,
+        freq,
         noise_config=noise_config,
         detector_config=detector_config,
     )
-
-    integrand = (4.0 * signal_magnitude_valid**2) / total_noise_psd
-    df = freq_valid[1] - freq_valid[0]
-    snr_1s = np.sqrt(np.sum(integrand) * df)
-    return float(snr_1s * np.sqrt(YEAR_SECONDS / INT_TIME))
 
 
 def main() -> None:

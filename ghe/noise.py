@@ -204,7 +204,7 @@ def get_detuned_signal_recycling_noise_psd(
 
     laser_omega = 2 * np.pi * active_config.c / active_config.wavelength
     gamma = active_config.T_ITM * active_config.c / (4 * active_config.length)
-    phi = np.mod(laser_omega * active_config.length_SR / active_config.c, 2 * np.pi)
+    phi = active_config.phi_SR
     phi_fp = np.arctan(gravitationalWaveOmega / gamma) + np.mod(gravitationalWaveOmega * active_config.length_SR / active_config.c, 2 * np.pi)
 
     rho_sq = 1.0 - active_config.T_SRM

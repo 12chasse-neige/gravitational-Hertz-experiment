@@ -131,7 +131,8 @@ $$
 $$
 and we could get the signal input to the detector
 $$
-h(t) = \frac{\delta T}{T} = \frac{1}{4L} a^{i} a^{j} \int_{0}^{L} h_{ij} \left(\text{Distance}(\xi), t_{0} + \frac{\xi}{c} - \frac{\text{Distance}(\xi)}{c} \right) + h_{ij} \left(\text{Distance}(\xi), t_{0} + \frac{L - \xi}{c} + \frac{\text{Distance}(\xi)}{c} \right) \, \mathrm{d} \xi
+h(t) = \frac{\delta L}{L} = \frac{\delta T}{T} \\ = 
+\frac{1}{4L} a^{i} a^{j} \int_{0}^{L} h_{ij} \left(\text{Distance}(\xi), t_{0} + \frac{\xi}{c} - \frac{\text{Distance}(\xi)}{c} \right) \\ + h_{ij} \left(\text{Distance}(\xi), t_{0} + \frac{L - \xi}{c} + \frac{\text{Distance}(\xi)}{c} \right) \, \mathrm{d} \xi
 $$
 
 With the signal input to the detector, we can now analysis the noise of the detector and get the SNR of a signal source. Assume that the whole signal we see is $d(t) = n(t) + h(t)$, so we can get the root mean square of the noise after filtering (whose mean value is assumed zero)
@@ -220,7 +221,7 @@ D_1 = -(1 + \rho e^{2i(\beta + \Phi)}) \sin \phi, \quad D_2 = -(-1 + \rho e^{2i(
 $$
 
 \[
-\phi = \left. \frac{\omega_{o} l}{c} \right|_{\text{mod} \, 2 \pi}  \quad \Phi = \left. \frac{\Omega l}{c} \right|_{\text{mod} \, 2 \pi}
+\phi = \left. \frac{\omega_{o} l}{c} \right|_{\text{mod} \, 2 \pi}  \quad \Phi = \arctan \frac{\Omega}{\gamma} + \left. \frac{\Omega l}{c} \right|_{\text{mod} \, 2 \pi}
 \]
 
 When we induce squeezing to  further reduce the quantum noise, we can get the psd curve for the squeezed noise[^3] 
@@ -245,7 +246,7 @@ M = 1 + \rho^2 \mathrm{e}^{4\imath\Phi} - 2\rho \mathrm{e}^{2\imath\Phi} \left( 
 $$
 
 \[
-\phi = \left. \frac{\omega_{o} l}{c} \right|_{\text{mod} \, 2 \pi} \quad \Phi = \arctan \frac{\Omega}{\gamma}
+\phi = \left. \frac{\omega_{o} l}{c} \right|_{\text{mod} \, 2 \pi} \quad \Phi = \arctan \frac{\Omega}{\gamma} + \left. \frac{\Omega l}{c} \right|_{\text{mod} \, 2 \pi}
 \]
 
 The signal transfer functions $\bar{s}$ for the two quadratures are given by
@@ -270,11 +271,15 @@ e^{r} & 0 \\
 \]
 Fixing $\zeta = \frac{\pi}{2}$, and using frequency-dependent squeezing to get the best noise (which means that the squeezing matrices are equivalent to an $e^{-r}$ factor), the psd curve in our project is
 \[
-S_{h} = e^{-2r} \frac{T_{21} T_{21}^{*} + T_{22} T_{22}^{*}}{s_{2} s_{2}^{*}} \\ =
+S_{h} = e^{-2r} \frac{T_{21} T_{21}^{*} + T_{22} T_{22}^{*}}{s_{2} s_{2}^{*}}
+\]
+
+\[
+S_{h} (\rho, \Omega) =
 \frac{h^{2}_{SQL} e^{-2r}}{2 \mathcal{K}} \frac{(1 - \rho^{2})^{2} \left( \sin(2\phi) - \mathcal{K} \cos^2(\phi) \right)^{2} + \left[ (1 + \rho^2) \left( \cos(2\phi) + \frac{\mathcal{K}}{2} \sin(2\phi) \right) - 2\rho \cos(2\Phi) \right]^{2}}{ (1 - \rho^{2}) \cos^{2} \phi (1 - 2 \rho \cos (2 \Phi) + \rho^{2})}
 \]
 
-
+To make sure that the optical resonance is at the 
 
 [^1]: Sayed Abolfazl Mirdehghan, 1 - Fibrous polymeric composites, Editor(s): Masoud Latifi, In The Textile Institute Book Series, Engineered Polymeric Fibrous Materials, Woodhead Publishing, 2021, Pages 1-58, ISBN 9780128243817, https://doi.org/10.1016/B978-0-12-824381-7.00012-3. (https://www.sciencedirect.com/science/article/pii/B9780128243817000123)
 [^2]: Buonanno, A., & Chen, Y. (2001). Quantum noise in second generation, signal-recycled laser interferometric gravitational-wave detectors. *Physical Review D*, *64*(4), 042006. https://doi.org/10.1103/PhysRevD.64.042006

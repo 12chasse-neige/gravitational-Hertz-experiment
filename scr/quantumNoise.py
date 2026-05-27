@@ -39,13 +39,15 @@ def require_gwinc() -> tuple[Any, Any]:
     return gwinc, Struct
 
 
-def get_gwinc_quantum_asd(freq: np.ndarray, squeeze_db: float, srm: float = 1.0) -> np.ndarray:
+def get_gwinc_quantum_asd(freq: np.ndarray, squeeze_db: float, srm: float = 1.0, l_sr: float = 55.0, phi_sr: float = 0.0) -> np.ndarray:
     gwinc, Struct = require_gwinc()
 
     budget = gwinc.load_budget("aLIGO")
     budget.ifo.Optics.SRM.Transmittance = srm
+    budget.ifo.Optics.SRM.CavityLength = l_sr 
+    budget.ifo.Optics.SRM.Tunephase = phi_sr
     budget.ifo.Squeezer = Struct(
-        Type="Freq Independent",
+        Type="Freq Dependent",
         AmplitudedB=squeeze_db,
         AntiAmplitudedB=squeeze_db,
         SQZAngle=0.0,
@@ -89,8 +91,10 @@ def plot_noise_curve_before_and_after_squeezing(squeeze_db: float = 10.0) -> Non
     plt.ylabel("Quantum noise [1/sqrt(Hz)]")
     plt.legend(loc="upper right", fontsize="small")
     plt.title("Quantum noise before squeezing (ASD)")
-    plt.savefig(IMG_DIR / "Quantum Noise (Before Squeezing).png")
+    before_squeezing_path = IMG_DIR / "Quantum Noise (Before Squeezing).png"
+    plt.savefig(before_squeezing_path, dpi=300)
     plt.close()
+    print(f"Saved figure: {before_squeezing_path}")
 
     plt.figure(figsize=(10, 6))
     psd_sqz = squeeze_quantum_noise_with_varying_angle(freq, squeeze_db=squeeze_db)
@@ -117,8 +121,11 @@ def plot_noise_curve_before_and_after_squeezing(squeeze_db: float = 10.0) -> Non
     plt.ylabel("Quantum noise [1/sqrt(Hz)]")
     plt.legend(loc="upper right", fontsize="small")
     plt.title("Quantum noise after squeezing (ASD)")
-    plt.savefig(IMG_DIR / "Quantum Noise (After Squeezing).png")
+    after_squeezing_path = IMG_DIR / "Quantum Noise (After Squeezing).png"
+    plt.savefig(after_squeezing_path, dpi=300)
     plt.close()
+    print(f"Saved figure: {after_squeezing_path}")
+
 
 
 def plot_noise_curve_with_detuned_interferometer(
@@ -154,7 +161,7 @@ def plot_noise_curve_with_detuned_interferometer(
             config=active_detector,
         )
     )
-    gwinc_asd = get_gwinc_quantum_asd(freq, squeeze_db=squeeze_db, srm=active_detector.T_SRM)
+    gwinc_asd = get_gwinc_quantum_asd(freq, squeeze_db=squeeze_db, srm=active_detector.T_SRM, l_sr=active_detector.length_SR, phi_sr=active_detector.phi_SR)
 
     import matplotlib.pyplot as plt
 
@@ -174,7 +181,7 @@ def plot_noise_curve_with_detuned_interferometer(
     ax.grid(True, linestyle="--", alpha=0.4)
     ax.set_xlabel("Frequency [Hz]")
     ax.set_ylabel("Quantum noise [1/sqrt(Hz)]")
-    ax.set_title("Quantum noise curve comparison")
+    ax.set_title("Quantum Noise Curves (ASD)")
     ax.legend(loc="best", fontsize="small")
     fig.tight_layout()
 
@@ -240,9 +247,9 @@ def main() -> None:
     args = parse_arguments()
     detector_config = DetectorConfig()
     if args.length_sr is not None:
-        detector_config = replace(detector_config, length_SR=args.length_sr)
+        detector_config = replace(detector_config, length_SR=args.length_sr, phi_SR=None)
     if args.t_srm is not None:
-        detector_config = replace(detector_config, T_SRM=args.t_srm)
+        detector_config = replace(detector_config, T_SRM=args.t_srm, phi_SR=None)
 
     if not args.comparison_only:
         plot_noise_curve_before_and_after_squeezing(squeeze_db=args.squeeze_db)

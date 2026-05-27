@@ -13,7 +13,7 @@ from ghe.noise import (
 
 def test_detuned_sr_matches_previous_model_for_open_zero_phase_sr() -> None:
     freqs = np.array([20.0, 100.0, 600.0, 1000.0])
-    detector_config = DetectorConfig(T_SRM=1.0, length_SR=0.0)
+    detector_config = DetectorConfig(T_SRM=1.0, length_SR=0.0, phi_SR=0.0)
     squeeze_db = 10.0
 
     previous = squeeze_quantum_noise_with_varying_angle(

@@ -36,3 +36,6 @@ carbonFiberProperty.pdf
 
 # Codex configurations
 AGENTS.md
+
+# LaTeX build output
+paper/
