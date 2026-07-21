@@ -63,14 +63,37 @@ def calculate_whole_tensor(t: float, config: SourceConfig) -> np.ndarray:
 
 def second_derivative_of_tensor(t: float, config: SourceConfig) -> np.ndarray:
     """
-    Return ``d^2 I_ij / dt^2`` for the rotating quadrupole.
+    Return the exact second time derivative d^2 I_ij / dt^2.
 
-    For two opposite holes the non-constant tensor terms oscillate at ``2*omega``,
-    so the second derivative is captured by multiplying by ``-4*omega**2``.
+    Each hole is modeled as a negative point mass moving on a circle.
+    For r(t) ⊗ r(t):
+
+        d²(r ⊗ r)/dt²
+        = a ⊗ r + 2 v ⊗ v + r ⊗ a
+
+    The trace-subtraction term has zero second derivative because
+    r² = s² is constant for circular motion.
     """
 
-    tensor = calculate_whole_tensor(t, config)
-    return -4.0 * config.omega**2 * tensor
+    tensor_ddot = np.zeros((3, 3), dtype=float)
+
+    volume = np.pi * config.d**2 / 4.0 * config.H
+    mass = -config.rho * volume
+
+    for k in range(config.num):
+        x, y = get_hole_coordinate(k, t, config)
+
+        position = np.array([x, y, 0.0], dtype=float)
+        velocity = config.omega * np.array([-y, x, 0.0], dtype=float)
+        acceleration = -(config.omega**2) * position
+
+        tensor_ddot += mass * (
+            np.outer(acceleration, position)
+            + 2.0 * np.outer(velocity, velocity)
+            + np.outer(position, acceleration)
+        )
+
+    return tensor_ddot
 
 
 def get_metric_tensor_body_frame(r: float, t: float, config: SourceConfig) -> np.ndarray:

@@ -30,6 +30,8 @@ Thumbs.db
 
 # Local reference material (large or personal copies)
 docs/
+img/
+data/
 
 # Large binary not tracked
 carbonFiberProperty.pdf

@@ -28,8 +28,8 @@ The scripts are now thin compatibility wrappers. New reusable code should go in 
 
 1. Create a Python environment (conda or venv recommended):
 	 ```bash
-	 conda create -n gravitationalHertzExperiment python=3.10
-	 conda activate gravitationalHertzExperiment
+	 conda create -n gravitational-Hertz-experiment python=3.10
+	 conda activate gravitational-Hertz-experiment
 	 # or use venv:
 	 # python -m venv .venv && source .venv/bin/activate
 	 ```
@@ -44,20 +44,16 @@ The scripts are now thin compatibility wrappers. New reusable code should go in 
 	```bash
 	python main.py
 	```
-- Detailed Chinese usage manual:
-	```text
-	docs/user-manual.md
-	```
 - Optional workflows:
 	- Optimize geometry:
 		```bash
 		python scr/bestPosition.py
 		```
-	- Generate FFT data and plots:
+	- Generate FFT data and plots only:
 		```bash
 		python scr/fourier.py
 		```
-	- Compute SNR from saved signal spectra:
+	- Regenerate the signal spectrum from current parameters and compute SNR:
 		```bash
 		python scr/noiseAnalysis.py
 		```

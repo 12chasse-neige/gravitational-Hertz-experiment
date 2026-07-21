@@ -162,7 +162,7 @@ $$
 where the coupling constant is defined as
 $$
 h_{SQL} = \sqrt{\frac{8 \hbar}{m \Omega^{2} L^{2}}}, \quad
-\kappa (\Omega) = \frac{2 \frac{I_{o}}{I_{SQL}} \gamma^{4}}{m L c \Omega^{2} (\gamma^{2} + \Omega^{2})}
+\kappa (\Omega) = \frac{2 \frac{I_{o}}{I_{SQL}} \gamma^{4}}{\Omega^{2} (\gamma^{2} + \Omega^{2})}
 $$
 and $I_{SQL}$ is the power when $\gamma = \Omega$, defined as
 $$

@@ -215,13 +215,6 @@ def save_results_csv(results: list[SweepResult], output_path: Path) -> None:
             writer.writerow({name: getattr(result, name) for name in fieldnames})
 
 
-def maybe_log_scale(ax, x_values: np.ndarray, y_values: np.ndarray) -> None:
-    if np.all(x_values > 0.0):
-        ax.set_xscale("log")
-    if np.all(y_values > 0.0):
-        ax.set_yscale("log")
-
-
 def plot_results(
     results: list[SweepResult],
     *,
@@ -233,34 +226,134 @@ def plot_results(
     os.environ.setdefault("MPLCONFIGDIR", str(matplotlib_cache_dir))
 
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import FixedLocator, FuncFormatter, MaxNLocator
 
-    lengths = np.array([result.arm_length_m for result in results], dtype=float)
+    lengths_km = np.array([result.arm_length_m for result in results], dtype=float) / 1e3
     asd = np.array([result.detuned_asd_per_sqrt_hz for result in results], dtype=float)
     snr = np.array([result.single_source_snr_year for result in results], dtype=float)
 
-    best_snr_index = int(np.nanargmax(snr))
-    min_asd_index = int(np.nanargmin(asd))
+    finite_positive = (
+        np.isfinite(lengths_km)
+        & np.isfinite(snr)
+        & (lengths_km > 0)
+        & (snr > 0)
+    )
+    if np.count_nonzero(finite_positive) < 2:
+        raise ValueError("At least two finite, positive arm lengths and SNRs are required")
+    snr_power, snr_log_normalization = np.polyfit(
+        np.log10(lengths_km[finite_positive]),
+        np.log10(snr[finite_positive]),
+        1,
+    )
+    snr_fit = 10.0 ** snr_log_normalization * lengths_km**snr_power
 
-    fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-    axes[0].plot(lengths, asd, marker="o", linewidth=2)
-    axes[0].axvline(lengths[min_asd_index], color="tab:green", linestyle="--", alpha=0.6)
-    axes[0].set_ylabel("ASD [1/sqrt(Hz)]")
-    axes[0].set_title(f"Detuned Interferometer ASD at {gw_frequency_hz:g} Hz")
-    axes[0].grid(True, which="both", linestyle="--", alpha=0.35)
-    maybe_log_scale(axes[0], lengths, asd)
+    paper_style = {
+        "font.family": "STIXGeneral",
+        "mathtext.fontset": "stix",
+        "font.size": 8.5,
+        "axes.labelsize": 8.5,
+        "xtick.labelsize": 7.5,
+        "ytick.labelsize": 7.5,
+        "axes.linewidth": 0.75,
+        "xtick.major.width": 0.75,
+        "ytick.major.width": 0.75,
+        "xtick.minor.width": 0.55,
+        "ytick.minor.width": 0.55,
+        "legend.fontsize": 7.5,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    }
+    blue = "#0072B2"
+    vermillion = "#D55E00"
 
-    axes[1].plot(lengths, snr, marker="o", linewidth=2, color="tab:orange")
-    axes[1].axvline(lengths[best_snr_index], color="tab:red", linestyle="--", alpha=0.6)
-    axes[1].set_xlabel("Arm length L [m]")
-    axes[1].set_ylabel("Single-source SNR, 1 year")
-    axes[1].set_title("Single-Source Detection Scaling")
-    axes[1].grid(True, which="both", linestyle="--", alpha=0.35)
-    maybe_log_scale(axes[1], lengths, snr)
+    with plt.rc_context(paper_style):
+        fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.05), sharex=True)
 
-    fig.tight_layout()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=300)
-    plt.close(fig)
+        axes[0].plot(
+            lengths_km,
+            asd / 1e-27,
+            color=blue,
+            marker="o",
+            markersize=3.2,
+            markerfacecolor="white",
+            markeredgewidth=0.8,
+            linewidth=1.45,
+            zorder=3,
+        )
+        axes[0].set_ylabel(
+            rf"$\sqrt{{S_h({gw_frequency_hz:g}\,\mathrm{{Hz}})}}$ "
+            r"[$10^{-27}\,\mathrm{Hz}^{-1/2}$]"
+        )
+        axes[0].yaxis.set_major_locator(MaxNLocator(5))
+
+        axes[1].plot(
+            lengths_km,
+            snr,
+            color=vermillion,
+            marker="o",
+            markersize=3.2,
+            markerfacecolor="white",
+            markeredgewidth=0.8,
+            linewidth=1.45,
+            label="Numerical sweep",
+            zorder=3,
+        )
+        axes[1].plot(
+            lengths_km,
+            snr_fit,
+            color="0.25",
+            linestyle="--",
+            linewidth=1.0,
+            label=rf"Fit: $\mathrm{{SNR}}\propto L^{{{snr_power:.2f}}}$",
+            zorder=2,
+        )
+        axes[1].set_yscale("log")
+        axes[1].set_ylabel(r"Single-source $\mathrm{SNR}_{1\,\mathrm{yr}}$")
+        axes[1].legend(frameon=False, loc="upper right", handlelength=2.4)
+
+        tick_positions = [0.5, 1.0, 2.0, 4.0, 10.0]
+        tick_formatter = FuncFormatter(lambda value, _: f"{value:g}")
+        for panel_label, ax in zip(("(a)", "(b)"), axes):
+            ax.set_xscale("log")
+            ax.xaxis.set_major_locator(FixedLocator(tick_positions))
+            ax.xaxis.set_major_formatter(tick_formatter)
+            ax.set_xlabel(r"Arm length $L$ [km]")
+            ax.axvline(4.0, color="0.55", linestyle=":", linewidth=0.9, zorder=1)
+            ax.grid(which="major", color="0.88", linewidth=0.65)
+            ax.grid(which="minor", axis="x", color="0.93", linewidth=0.45)
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.tick_params(direction="out", length=3.2)
+            ax.text(
+                0.0,
+                1.02,
+                panel_label,
+                transform=ax.transAxes,
+                ha="left",
+                va="bottom",
+                fontweight="bold",
+            )
+
+        axes[0].annotate(
+            "4 km baseline",
+            xy=(4.0, 0.04),
+            xycoords=("data", "axes fraction"),
+            xytext=(4, 1),
+            textcoords="offset points",
+            color="0.35",
+            fontsize=7.2,
+            rotation=90,
+            ha="left",
+            va="bottom",
+        )
+
+        fig.subplots_adjust(left=0.105, right=0.99, bottom=0.19, top=0.97, wspace=0.34)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, dpi=600, bbox_inches="tight", pad_inches=0.03)
+        vector_output_path = output_path.with_suffix(".pdf")
+        if vector_output_path != output_path:
+            fig.savefig(vector_output_path, bbox_inches="tight", pad_inches=0.03)
+        plt.close(fig)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -353,6 +446,8 @@ def main() -> None:
     min_asd = min(results, key=lambda result: result.detuned_asd_per_sqrt_hz)
     print(f"\nSaved CSV: {args.csv_output}")
     print(f"Saved figure: {args.output}")
+    if args.output.suffix.lower() != ".pdf":
+        print(f"Saved vector figure: {args.output.with_suffix('.pdf')}")
     print(
         "Best single-source SNR: "
         f"L={best_snr.arm_length_m:g} m, SNR_yr={best_snr.single_source_snr_year:.6e}"

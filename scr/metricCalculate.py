@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-if __package__ in (None, ""):
-    import sys
-    from pathlib import Path
-
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import argparse
+import os
 import sys
+from pathlib import Path
 from typing import Optional, Tuple
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 
@@ -52,6 +51,7 @@ def calculate_metric_response(
     theta_rot: Optional[float] = None,
     phi_rot: Optional[float] = None,
     R: Optional[float] = None,
+    config: Optional[ExperimentConfig] = None,
 ) -> float:
     d1, d2, d3, d4 = _get_best_position_defaults()
     return _calculate_metric_response(
@@ -60,6 +60,7 @@ def calculate_metric_response(
         d2 if phi_src is None else phi_src,
         d3 if theta_rot is None else theta_rot,
         d4 if phi_rot is None else phi_rot,
+        config=config,
         R=R,
     )
 
@@ -112,18 +113,82 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def signal_test() -> None:
-    t = build_time_axis()
-    h_values = np.array([calculate_metric_response(ti) for ti in t])
+def plot_single_source_signal(
+    time_s: np.ndarray,
+    response: np.ndarray,
+    *,
+    output_path: Path,
+) -> None:
+    """Plot the single-source response using the paper figure style."""
+
+    time_s = np.asarray(time_s, dtype=float)
+    response = np.asarray(response, dtype=float)
+    if time_s.ndim != 1 or response.ndim != 1 or time_s.shape != response.shape:
+        raise ValueError("time_s and response must be one-dimensional arrays of equal length")
+    if time_s.size < 2 or not np.all(np.isfinite(time_s)) or not np.all(np.isfinite(response)):
+        raise ValueError("time_s and response must contain at least two finite samples")
+
+    max_response = float(np.max(np.abs(response)))
+    response_exponent = 0 if max_response == 0.0 else int(np.floor(np.log10(max_response)))
+    scaled_response = response / 10.0**response_exponent
+
+    matplotlib_cache_dir = Path(os.getenv("TMPDIR", "/tmp")) / "ghe-matplotlib-cache"
+    matplotlib_cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(matplotlib_cache_dir))
 
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(t, h_values)
-    plt.xlabel("Time [s]")
-    plt.ylabel("Signal [1]")
-    plt.title("Input Signal Curve")
-    plt.savefig(IMG_DIR / "Signal.png")
+    paper_style = {
+        "font.family": "STIXGeneral",
+        "mathtext.fontset": "stix",
+        "font.size": 8.5,
+        "axes.labelsize": 8.5,
+        "xtick.labelsize": 7.5,
+        "ytick.labelsize": 7.5,
+        "axes.linewidth": 0.75,
+        "xtick.major.width": 0.75,
+        "ytick.major.width": 0.75,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    }
+
+    with plt.rc_context(paper_style):
+        fig, ax = plt.subplots(figsize=(4.8, 2.75))
+        ax.plot(time_s * 1e3, scaled_response, color="#0072B2", linewidth=1.45)
+        ax.axhline(0.0, color="0.55", linestyle=":", linewidth=0.9, zorder=1)
+        ax.set_xlabel(r"Time $t$ [ms]")
+        ax.set_ylabel(
+            rf"Detector response $h_{{\mathrm{{det}}}}$ [$10^{{{response_exponent}}}$]"
+        )
+        ax.xaxis.set_major_locator(MaxNLocator(6))
+        ax.yaxis.set_major_locator(MaxNLocator(5))
+        ax.grid(which="major", color="0.88", linewidth=0.65)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.tick_params(direction="out", length=3.2)
+
+        fig.subplots_adjust(left=0.16, right=0.99, bottom=0.20, top=0.98)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, dpi=600, bbox_inches="tight", pad_inches=0.03)
+        vector_output_path = output_path.with_suffix(".pdf")
+        if vector_output_path != output_path:
+            fig.savefig(vector_output_path, bbox_inches="tight", pad_inches=0.03)
+        plt.close(fig)
+
+
+def signal_test(
+    *,
+    arm_length_m: float = 4000.0,
+    output_path: Path = IMG_DIR / "Signal.png",
+) -> None:
+    t = build_time_axis()
+    config = ExperimentConfig(L=float(arm_length_m))
+    h_values = np.array(
+        [calculate_metric_response(ti, config=config) for ti in t],
+        dtype=float,
+    )
+    plot_single_source_signal(t, h_values, output_path=output_path)
 
 
 if __name__ == "__main__":

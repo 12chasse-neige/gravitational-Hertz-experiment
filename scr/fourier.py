@@ -8,14 +8,30 @@ if __package__ in (None, ""):
 
 import numpy as np
 
-from ghe.config import FREQS_FILE, IMG_DIR, INT_TIME, MAGNITUDE_FILE, NUM, build_time_axis
+from ghe.config import (
+    FREQS_FILE,
+    IMG_DIR,
+    INT_TIME,
+    MAGNITUDE_FILE,
+    NUM,
+    SamplingConfig,
+    build_time_axis,
+)
 from ghe.spectrum import fourier
 
 
-def build_default_signal() -> np.ndarray:
+def build_default_signal(
+    sampling_config: SamplingConfig | None = None,
+) -> np.ndarray:
+    """Generate the single-source signal using the active project parameters."""
+
     from scr.metricCalculate import calculate_metric_response
 
-    time_axis = build_time_axis()
+    time_axis = (
+        sampling_config.time_axis()
+        if sampling_config is not None
+        else build_time_axis()
+    )
     return np.array([calculate_metric_response(ti) for ti in time_axis], dtype=float)
 
 
