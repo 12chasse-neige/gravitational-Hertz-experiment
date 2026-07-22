@@ -8,6 +8,16 @@ response and summing all sources on the same time axis.
 
 The chunked path avoids the original anti-pattern of rereading the full CSV for
 each time sample.
+
+Optimisation notes
+------------------
+
+* Per-source geometry vectors (``n_src_to_det`` and ``R_body_to_det``) are
+  precomputed once and re-used for every time sample of that source.
+* Intermediate per-source time-series arrays are avoided; response samples are
+  accumulated directly into ``h_total``.
+* Scalar fields are accessed via ``.item()`` to avoid repeated ``float()``
+  boxing overhead.
 """
 
 from __future__ import annotations
@@ -18,7 +28,8 @@ from typing import Iterator
 import numpy as np
 
 from .config import SourceConfig
-from .metric import calculate_metric_response
+from .geometry import rotation_body_to_detector, spherical_unit_vector
+from .metric import _calculate_metric_response_prepared
 from .paths import SOURCE_ARRAY_DISTRIBUTION_FILE, SOURCE_ARRAY_NPZ_FILE
 from .source_array.io import read_source_array
 
@@ -31,7 +42,7 @@ def source_phase_time_offset(row: np.void, config: SourceConfig) -> float:
     equivalent time offset applied to the source response.
     """
 
-    return float(row["rotor_phase_offset_rad"]) / config.omega
+    return row["rotor_phase_offset_rad"].item() / config.omega
 
 
 def calculate_single_source_response(
@@ -47,16 +58,43 @@ def calculate_single_source_response(
     a time shift before calling the single-source metric response.
     """
 
+    from .metric import calculate_metric_response
+
     active_config = config or SourceConfig()
     return calculate_metric_response(
         t - source_phase_time_offset(row, active_config),
-        float(row["theta_src"]),
-        float(row["phi_src"]),
-        float(row["theta_rot"]),
-        float(row["phi_rot"]),
+        row["theta_src"].item(),
+        row["phi_src"].item(),
+        row["theta_rot"].item(),
+        row["phi_rot"].item(),
         config=active_config,
-        R=float(row["distance_to_detector_m"]),
+        R=row["distance_to_detector_m"].item(),
     )
+
+
+def _precompute_source_geometry(
+    row: np.void,
+    config: SourceConfig,
+) -> tuple[SourceConfig, np.ndarray, np.ndarray]:
+    """
+    Return ``(config_with_R, n_src_to_det, R_body_to_det)`` for one source row.
+
+    These are invariant across time samples and are used by the fast metric path.
+    """
+
+    from dataclasses import replace
+
+    R = row["distance_to_detector_m"].item()
+    config_with_R = replace(config, R=R) if R != config.R else config
+    n_src_to_det = spherical_unit_vector(
+        row["theta_src"].item(),
+        row["phi_src"].item(),
+    )
+    R_body_to_det = rotation_body_to_detector(
+        row["theta_rot"].item(),
+        row["phi_rot"].item(),
+    )
+    return config_with_R, n_src_to_det, R_body_to_det
 
 
 def calculate_chunk_response(
@@ -75,24 +113,17 @@ def calculate_chunk_response(
 
     active_config = config or SourceConfig()
     h_total = np.zeros_like(time_axis, dtype=float)
+
     for row in chunk:
-        phase_time_offset = source_phase_time_offset(row, active_config)
-        shifted_times = time_axis - phase_time_offset
-        h_total += np.array(
-            [
-                calculate_metric_response(
-                    float(t),
-                    float(row["theta_src"]),
-                    float(row["phi_src"]),
-                    float(row["theta_rot"]),
-                    float(row["phi_rot"]),
-                    config=active_config,
-                    R=float(row["distance_to_detector_m"]),
-                )
-                for t in shifted_times
-            ],
-            dtype=float,
-        )
+        phase_time_offset = row["rotor_phase_offset_rad"].item() / active_config.omega
+        cfg, n_src_to_det, R_body_to_det = _precompute_source_geometry(row, active_config)
+
+        for i in range(len(time_axis)):
+            shifted_t = float(time_axis[i] - phase_time_offset)
+            h_total[i] += _calculate_metric_response_prepared(
+                shifted_t, n_src_to_det, R_body_to_det, cfg,
+            )
+
     return h_total
 
 

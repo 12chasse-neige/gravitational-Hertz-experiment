@@ -6,6 +6,18 @@ from typing import Iterator
 import numpy as np
 
 
+def _all_divisors(n: int) -> list[int]:
+    divisors = []
+    limit = int(math.isqrt(n))
+    for d in range(1, limit + 1):
+        if n % d == 0:
+            divisors.append(d)
+            if d != n // d:
+                divisors.append(n // d)
+    divisors.sort()
+    return divisors
+
+
 def choose_lattice_dimensions(num_sources: int) -> tuple[int, int, int]:
     """
     Choose a factorization ``(nx, ny, nz)`` that is as cube-like as possible.
@@ -14,28 +26,36 @@ def choose_lattice_dimensions(num_sources: int) -> tuple[int, int, int]:
     if num_sources < 1:
         raise ValueError("num_sources must be positive.")
 
-    best_dims = (1, 1, num_sources)
-    best_score = (num_sources - 1, num_sources - 1, num_sources)
+    divisors = _all_divisors(num_sources)
+    best_dims: tuple[int, int, int] = (1, 1, num_sources)
+    best_score: float = float(num_sources)
 
-    max_a = int(round(num_sources ** (1.0 / 3.0))) + 2
-    for a in range(1, max_a + 1):
-        if num_sources % a != 0:
-            continue
+    cbrt = round(num_sources ** (1.0 / 3.0))
 
-        remainder = num_sources // a
-        b = int(math.isqrt(remainder))
-        while b >= a:
-            if remainder % b == 0:
-                c = remainder // b
-                dims = tuple(sorted((a, b, c)))
-                score = (dims[2] - dims[0], dims[1] - dims[0], dims[2])
-                if score < best_score:
-                    best_dims = dims
-                    best_score = score
+    for a in divisors:
+        if a > cbrt * 2:
+            break
+        remainder_a = num_sources // a
+        b_ideal = int(math.isqrt(remainder_a))
+        for b in divisors:
+            if b < a:
+                continue
+            if b > remainder_a:
                 break
-            b -= 1
+            if remainder_a % b != 0:
+                continue
+            c = remainder_a // b
+            if b > c:
+                continue
+            score = float(c - a)
+            if score < best_score:
+                best_dims = (int(a), int(b), int(c))
+                best_score = score
 
-    return best_dims
+    if best_score < float(num_sources):
+        return best_dims
+
+    return (1, 1, int(num_sources))
 
 
 def positions_for_index_range(

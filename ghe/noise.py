@@ -19,6 +19,43 @@ import numpy as np
 
 from .config import DetectorConfig, NoiseConfig
 
+_noise_coeff_cache: dict[tuple, tuple[float, float, float, float, float]] = {}
+
+
+def _noise_coeff_key(config: DetectorConfig) -> tuple:
+    return (
+        config.T_ITM,
+        config.length,
+        config.c,
+        config.wavelength,
+        config.power,
+        config.T_PRM,
+        config.loss_mirror_ppm,
+        config.loss_BS_ppm,
+        config.T_ETM,
+        config.testmass,
+        config.hbar,
+    )
+
+
+def _precompute_noise_coeffs(
+    config: DetectorConfig,
+) -> tuple[float, float, float, float, float]:
+    key = _noise_coeff_key(config)
+    cached = _noise_coeff_cache.get(key)
+    if cached is not None:
+        return cached
+
+    laser_omega = 2.0 * np.pi * config.c / config.wavelength
+    gamma = config.T_ITM * config.c / (4.0 * config.length)
+    P_0 = 2.0 * get_laser_power_in_cavity(config.power, config=config)
+    h_sql_const = 8.0 * config.hbar / (config.testmass * config.length**2)
+    kappa_const = 8.0 * gamma * laser_omega * P_0 / (config.testmass * config.length * config.c)
+
+    coeffs = (float(laser_omega), float(gamma), float(P_0), float(h_sql_const), float(kappa_const))
+    _noise_coeff_cache[key] = coeffs
+    return coeffs
+
 
 DEFAULT_NOISE_MODEL = "frequency_dependent_squeezed"
 DETUNED_SIGNAL_RECYCLING_NOISE_MODEL = "detuned_signal_recycling"
@@ -83,7 +120,8 @@ def get_standard_quantum_limit(
 
     active_config = config or DetectorConfig()
     omega = np.asarray(gravitationalWaveOmega, dtype=float)
-    return np.sqrt(8 * active_config.hbar / (active_config.testmass * omega**2 * active_config.length**2))
+    _, _, _, h_sql_const, _ = _precompute_noise_coeffs(active_config)
+    return np.sqrt(h_sql_const / omega**2)
 
 
 def get_coupling_constant(
@@ -100,16 +138,8 @@ def get_coupling_constant(
 
     active_config = config or DetectorConfig()
     gw_omega = np.asarray(gravitationalWaveOmega, dtype=float)
-    laser_omega = 2 * np.pi * active_config.c / active_config.wavelength
-    gamma = active_config.T_ITM * active_config.c / (4 * active_config.length)
-    P_0 = 2 * get_laser_power_in_cavity(active_config.power, config=active_config)
-    return (8 * gamma * laser_omega * P_0) / (
-        active_config.testmass
-        * active_config.length
-        * active_config.c
-        * gw_omega**2
-        * (gamma**2 + gw_omega**2)
-    )
+    _, gamma, _, _, kappa_const = _precompute_noise_coeffs(active_config)
+    return kappa_const / (gw_omega**2 * (gamma**2 + gw_omega**2))
 
 
 def get_quantum_noise_psd(freq: float | np.ndarray, config: DetectorConfig | None = None) -> np.ndarray:
@@ -202,8 +232,7 @@ def get_detuned_signal_recycling_noise_psd(
     h_sql_sq = get_standard_quantum_limit(gravitationalWaveOmega, config=active_config) ** 2
     kappa = get_coupling_constant(gravitationalWaveOmega, config=active_config)
 
-    laser_omega = 2 * np.pi * active_config.c / active_config.wavelength
-    gamma = active_config.T_ITM * active_config.c / (4 * active_config.length)
+    laser_omega, gamma, _, _, _ = _precompute_noise_coeffs(active_config)
     phi = active_config.phi_SR
     phi_fp = np.arctan(gravitationalWaveOmega / gamma) + np.mod(gravitationalWaveOmega * active_config.length_SR / active_config.c, 2 * np.pi)
 

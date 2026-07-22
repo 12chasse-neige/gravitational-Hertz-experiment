@@ -13,6 +13,26 @@ from scipy.optimize import root_scalar
 
 from .noise import get_coupling_constant
 
+_phi_SR_cache: dict[tuple, float] = {}
+
+
+def _phi_SR_cache_key(f_res: float, config: DetectorConfig) -> tuple:
+    return (
+        round(f_res, 3),
+        round(config.T_SRM, 10),
+        round(config.length, 3),
+        round(config.length_SR, 3),
+        round(config.T_ITM, 10),
+        config.c,
+        config.power,
+        config.testmass,
+        config.wavelength,
+        config.loss_mirror_ppm,
+        config.loss_BS_ppm,
+        config.T_PRM,
+        config.T_ETM,
+    )
+
 
 def get_source_gw_frequency_hz(config: SourceConfig | None = None) -> float:
     """Return the dominant gravitational-wave frequency emitted by a source."""
@@ -67,6 +87,11 @@ def get_resonance_phase_for_detuned_signal_recycling(
     frequency f_res.
     """
     active_config = config or DetectorConfig()
+    key = _phi_SR_cache_key(f_res, active_config)
+    cached = _phi_SR_cache.get(key)
+    if cached is not None:
+        return cached
+
     omega = 2 * np.pi * f_res
     gamma = active_config.T_ITM * active_config.c / (4 * active_config.length)
     phi_fp = np.arctan(omega / gamma) + np.mod(
@@ -95,4 +120,6 @@ def get_resonance_phase_for_detuned_signal_recycling(
     if not result.converged:
         raise RuntimeError("Failed to find resonance phase for detuned signal recycling.")
 
-    return float(result.root)
+    phase = float(result.root)
+    _phi_SR_cache[key] = phase
+    return phase

@@ -19,12 +19,26 @@ This module deliberately requires explicit source and rotor angles.  The legacy
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Tuple
 
 import numpy as np
-from scipy.integrate import quad
+from numpy.polynomial.legendre import leggauss
 
 from .config import SourceConfig
 from .geometry import rotation_body_to_detector, spherical_unit_vector
+
+_GL_ORDER = 7
+_GL_NODES, _GL_WEIGHTS = leggauss(_GL_ORDER)
+_gl_quadrature_cache: dict[float, Tuple[np.ndarray, np.ndarray]] = {}
+
+
+def _get_quadrature(L: float) -> Tuple[np.ndarray, np.ndarray]:
+    key = round(L * 1e12)
+    if key not in _gl_quadrature_cache:
+        x_nodes = 0.5 * L * (_GL_NODES + 1.0)
+        w_scaled = 0.5 * L * _GL_WEIGHTS
+        _gl_quadrature_cache[key] = (x_nodes, w_scaled)
+    return _gl_quadrature_cache[key]
 
 
 def get_hole_coordinate(k: int, t: float, config: SourceConfig) -> tuple[float, float]:
@@ -125,6 +139,37 @@ def project_to_tt_gauge_dynamic(h_matrix: np.ndarray, r_vec: np.ndarray) -> np.n
     return P @ h_matrix @ P.T - 0.5 * P * trace
 
 
+def _integrate_arm_response(
+    t: float,
+    n_src_to_det: np.ndarray,
+    a_vec: np.ndarray,
+    config: SourceConfig,
+    R_body_to_det: np.ndarray,
+    *,
+    forward: bool,
+) -> float:
+    """Fixed Gauss-Legendre quadrature along one arm for forward or return trip."""
+
+    x_nodes, w_scaled = _get_quadrature(config.L)
+    R_scalar = config.R
+    result = 0.0
+
+    for x, w in zip(x_nodes, w_scaled):
+        r_vec = x * a_vec - R_scalar * n_src_to_det
+        r_distance = np.linalg.norm(r_vec)
+        if forward:
+            photon_time = t + x / config.c
+        else:
+            photon_time = t + (config.L - x) / config.c
+
+        h_body = get_metric_tensor_body_frame(r_distance, photon_time, config)
+        h_det = R_body_to_det @ h_body @ R_body_to_det.T
+        h_tt = project_to_tt_gauge_dynamic(h_det, r_vec)
+        result += w * float((a_vec.T @ h_tt @ a_vec) / (2.0 * config.c))
+
+    return float(result)
+
+
 def calculate_delta_t(
     t: float,
     n_src_to_det: np.ndarray,
@@ -142,24 +187,7 @@ def calculate_delta_t(
 
     n_src_to_det = np.asarray(n_src_to_det, dtype=float)
     n_src_to_det = n_src_to_det / np.linalg.norm(n_src_to_det)
-    R_body_to_det = np.asarray(R_body_to_det, dtype=float)
-
-    def integrand(x: float) -> float:
-        # Detector vertex is at the origin; the source is at R*n_src_to_det.
-        # A photon at distance x along the arm has position x*a_vec, so this is
-        # the source-to-photon separation vector used for retarded propagation.
-        r_vec = x * a_vec - config.R * n_src_to_det
-        r_distance = np.linalg.norm(r_vec)
-
-        # Build h_ij in the source body frame, rotate components into detector
-        # coordinates, then remove gauge components transverse to propagation.
-        h_body = get_metric_tensor_body_frame(r_distance, t + x / config.c, config)
-        h_det = R_body_to_det @ h_body @ R_body_to_det.T
-        h_tt = project_to_tt_gauge_dynamic(h_det, r_vec)
-        return float((a_vec.T @ h_tt @ a_vec) / (2.0 * config.c))
-
-    result, _ = quad(integrand, 0.0, config.L)
-    return float(result)
+    return _integrate_arm_response(t, n_src_to_det, a_vec, config, R_body_to_det, forward=True)
 
 
 def calculate_delta_t_prime(
@@ -179,18 +207,34 @@ def calculate_delta_t_prime(
 
     n_src_to_det = np.asarray(n_src_to_det, dtype=float)
     n_src_to_det = n_src_to_det / np.linalg.norm(n_src_to_det)
-    R_body_to_det = np.asarray(R_body_to_det, dtype=float)
+    return _integrate_arm_response(t, n_src_to_det, a_vec, config, R_body_to_det, forward=False)
 
-    def integrand(x: float) -> float:
-        r_vec = x * a_vec - config.R * n_src_to_det
-        r_distance = np.linalg.norm(r_vec)
-        h_body = get_metric_tensor_body_frame(r_distance, t + (config.L - x) / config.c, config)
-        h_det = R_body_to_det @ h_body @ R_body_to_det.T
-        h_tt = project_to_tt_gauge_dynamic(h_det, r_vec)
-        return float((a_vec.T @ h_tt @ a_vec) / (2.0 * config.c))
 
-    result, _ = quad(integrand, 0.0, config.L)
-    return float(result)
+def _calculate_metric_response_prepared(
+    t: float,
+    n_src_to_det: np.ndarray,
+    R_body_to_det: np.ndarray,
+    config: SourceConfig,
+) -> float:
+    """
+    Compute detector strain with pre-computed geometry vectors.
+
+    The caller already provides the source-to-detector direction and the body-to-
+    detector rotation matrix so they are not recomputed per time sample.
+    """
+
+    a_vec = np.array([1.0, 0.0, 0.0], dtype=float)
+    b_vec = np.array([0.0, 1.0, 0.0], dtype=float)
+
+    t_forward = t - 2.0 * config.L / config.c
+    t_return = t - config.L / config.c
+
+    delay_1 = _integrate_arm_response(t_forward, n_src_to_det, a_vec, config, R_body_to_det, forward=True)
+    delay_1 += _integrate_arm_response(t_return, n_src_to_det, a_vec, config, R_body_to_det, forward=False)
+    delay_2 = _integrate_arm_response(t_forward, n_src_to_det, b_vec, config, R_body_to_det, forward=True)
+    delay_2 += _integrate_arm_response(t_return, n_src_to_det, b_vec, config, R_body_to_det, forward=False)
+
+    return float((delay_1 - delay_2) * config.c / (2.0 * config.L))
 
 
 def calculate_metric_response(
@@ -202,6 +246,8 @@ def calculate_metric_response(
     *,
     config: SourceConfig | None = None,
     R: float | None = None,
+    _n_src_to_det: np.ndarray | None = None,
+    _R_body_to_det: np.ndarray | None = None,
 ) -> float:
     """
     Compute the detector strain response for explicit source and rotor geometry.
@@ -215,26 +261,22 @@ def calculate_metric_response(
 
     The legacy best-position default lookup is intentionally kept in
     ``scr.metricCalculate``.
+
+    Internal keyword arguments ``_n_src_to_det`` and ``_R_body_to_det`` allow
+    callers that already have these vectors to skip recomputation.
     """
 
     active_config = config or SourceConfig()
     if R is not None:
         active_config = replace(active_config, R=float(R))
 
-    a_vec = np.array([1.0, 0.0, 0.0], dtype=float)
-    b_vec = np.array([0.0, 1.0, 0.0], dtype=float)
+    if _n_src_to_det is not None and _R_body_to_det is not None:
+        return _calculate_metric_response_prepared(
+            t, _n_src_to_det, _R_body_to_det, active_config,
+        )
 
     n_src_to_det = spherical_unit_vector(theta_src, phi_src)
     R_body_to_det = rotation_body_to_detector(theta_rot, phi_rot)
-
-    # The arm integrals use photon emission times.  A response observed at time t
-    # contains a forward segment and a return segment shifted by light travel time.
-    t_forward = t - 2.0 * active_config.L / active_config.c
-    t_return = t - active_config.L / active_config.c
-
-    delay_1 = calculate_delta_t(t_forward, n_src_to_det, a_vec, active_config, R_body_to_det)
-    delay_1 += calculate_delta_t_prime(t_return, n_src_to_det, a_vec, active_config, R_body_to_det)
-    delay_2 = calculate_delta_t(t_forward, n_src_to_det, b_vec, active_config, R_body_to_det)
-    delay_2 += calculate_delta_t_prime(t_return, n_src_to_det, b_vec, active_config, R_body_to_det)
-
-    return float((delay_1 - delay_2) * active_config.c / (2.0 * active_config.L))
+    return _calculate_metric_response_prepared(
+        t, n_src_to_det, R_body_to_det, active_config,
+    )

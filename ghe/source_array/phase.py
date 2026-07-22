@@ -13,7 +13,8 @@ import math
 import numpy as np
 
 from ghe.config import SourceConfig
-from ghe.metric import calculate_metric_response
+from ghe.geometry import rotation_body_to_detector, spherical_unit_vector
+from ghe.metric import _calculate_metric_response_prepared
 
 
 def get_signal_amplitude_and_phase(
@@ -34,26 +35,22 @@ def get_signal_amplitude_and_phase(
     """
 
     active_config = config or SourceConfig()
+    if distance != active_config.R:
+        from dataclasses import replace
+
+        active_config = replace(active_config, R=float(distance))
+
+    n_src_to_det = spherical_unit_vector(theta_src, phi_src)
+    R_body_to_det = rotation_body_to_detector(theta_rot, phi_rot)
+
     t0 = 0.0
     quarter_period = np.pi / (4.0 * active_config.omega)
 
-    signal_t0 = calculate_metric_response(
-        t0,
-        theta_src,
-        phi_src,
-        theta_rot,
-        phi_rot,
-        config=active_config,
-        R=distance,
+    signal_t0 = _calculate_metric_response_prepared(
+        t0, n_src_to_det, R_body_to_det, active_config,
     )
-    signal_t90 = calculate_metric_response(
-        quarter_period,
-        theta_src,
-        phi_src,
-        theta_rot,
-        phi_rot,
-        config=active_config,
-        R=distance,
+    signal_t90 = _calculate_metric_response_prepared(
+        quarter_period, n_src_to_det, R_body_to_det, active_config,
     )
 
     amplitude = math.hypot(signal_t0, signal_t90)

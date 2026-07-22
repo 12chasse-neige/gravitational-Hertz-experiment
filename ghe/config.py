@@ -45,7 +45,7 @@ def _env_optional_float(name: str) -> float | None:
 
 
 def _default_arm_length() -> float:
-    return _env_float("LIGO_ARM_LENGTH", 2000.0)
+    return _env_float("LIGO_ARM_LENGTH", 4000.0)
 
 
 def _env_int(name: str, default: int) -> int:

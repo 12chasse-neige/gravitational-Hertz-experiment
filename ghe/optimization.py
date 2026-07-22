@@ -19,8 +19,8 @@ import numpy as np
 from scipy.optimize import minimize
 
 from .config import SourceConfig
-from .geometry import spherical_unit_vector
-from .metric import calculate_metric_response
+from .geometry import rotation_body_to_detector, spherical_unit_vector
+from .metric import _calculate_metric_response_prepared, calculate_metric_response
 from .paths import BEST_POSITION_FILE, BEST_POSITION_JSON_FILE
 
 SCALE_FACTOR = 1e38
@@ -85,21 +85,15 @@ def get_signal_amplitude(
 
     active_config = config or SourceConfig()
     period = 2.0 * np.pi / active_config.omega
-    val1 = calculate_metric_response(
-        0.0,
-        theta_src,
-        phi_src,
-        theta_rot,
-        phi_rot,
-        config=active_config,
+
+    n_src_to_det = spherical_unit_vector(theta_src, phi_src)
+    R_body_to_det = rotation_body_to_detector(theta_rot, phi_rot)
+
+    val1 = _calculate_metric_response_prepared(
+        0.0, n_src_to_det, R_body_to_det, active_config,
     )
-    val2 = calculate_metric_response(
-        period / 8.0,
-        theta_src,
-        phi_src,
-        theta_rot,
-        phi_rot,
-        config=active_config,
+    val2 = _calculate_metric_response_prepared(
+        period / 8.0, n_src_to_det, R_body_to_det, active_config,
     )
     return float(np.sqrt(val1**2 + val2**2))
 

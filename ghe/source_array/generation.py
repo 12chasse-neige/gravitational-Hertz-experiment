@@ -402,8 +402,9 @@ def write_source_array_npz(
     """
     Write a structured NPZ source-array artifact plus metadata.
 
-    NPZ is intended as the preferred package format when the array fits in memory
-    during writing.  It preserves dtypes and avoids CSV conversion overhead.
+    For arrays larger than 1 million sources, a temporary memmapped intermediate
+    is used to avoid collecting every chunk in memory before writing the final
+    NPZ.  Small arrays use the direct-concatenate path for simplicity.
     """
 
     context = build_array_context(
@@ -416,9 +417,37 @@ def write_source_array_npz(
         chunk_center_approximation=chunk_center_approximation,
         approximation_chunk_size=approximation_chunk_size,
     )
-    chunks = [chunk for chunk in iter_source_chunks(context, chunk_size=chunk_size)]
-    source_array = np.concatenate(chunks) if chunks else np.empty(0, dtype=SOURCE_ARRAY_DTYPE)
-    write_source_array_npz_file(output_path, source_array, metadata=context.metadata())
+
+    out_path = Path(output_path)
+
+    if num_sources <= 1_000_000:
+        chunks = [chunk for chunk in iter_source_chunks(context, chunk_size=chunk_size)]
+        source_array = np.concatenate(chunks) if chunks else np.empty(0, dtype=SOURCE_ARRAY_DTYPE)
+    else:
+        memmap_path = out_path.with_suffix(".mmap.npy")
+        try:
+            memmap = np.lib.format.open_memmap(
+                str(memmap_path),
+                mode="w+",
+                dtype=SOURCE_ARRAY_DTYPE,
+                shape=(num_sources,),
+            )
+            written = 0
+            for chunk in iter_source_chunks(context, chunk_size=chunk_size):
+                n = len(chunk)
+                memmap[written : written + n] = chunk
+                written += n
+            memmap.flush()
+            source_array = memmap
+        except Exception:
+            memmap_path.unlink(missing_ok=True)
+            raise
+
+    write_source_array_npz_file(out_path, source_array, metadata=context.metadata())
+
+    if num_sources > 1_000_000:
+        memmap_path.unlink(missing_ok=True)
+
     return context
 
 
