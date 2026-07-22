@@ -81,76 +81,76 @@ def calculate_snr_year_from_saved_data(
     )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Sweep LIGO test mass and arm length, recompute best angles when arm length changes, "
-            "and output an snr_year table."
-        )
-    )
-    parser.add_argument(
-        "--masses",
-        required=True,
-        help="Masses in kg: comma list (20,39.6,80) or range [10,100,10].",
-    )
-    parser.add_argument(
-        "--lengths",
-        required=True,
-        help="Lengths in m: comma list (1000,2000,4000) or range [1000,4000,1000].",
-    )
-    parser.add_argument(
-        "--output",
-        default="data/snr_year_table.csv",
-        help="Output CSV path. Default: data/snr_year_table.csv",
-    )
-    parser.add_argument(
-        "--noise-model",
-        default=None,
-        help=(
-            "Detector noise model. Use 'frequency_dependent_squeezed'/'previous' "
-            "or 'detuned_signal_recycling'/'detuned'. Defaults to GHE_NOISE_MODEL."
-        ),
-    )
-    args = parser.parse_args()
+# def main() -> None:
+#     parser = argparse.ArgumentParser(
+#         description=(
+#             "Sweep LIGO test mass and arm length, recompute best angles when arm length changes, "
+#             "and output an snr_year table."
+#         )
+#     )
+#     parser.add_argument(
+#         "--masses",
+#         required=True,
+#         help="Masses in kg: comma list (20,39.6,80) or range [10,100,10].",
+#     )
+#     parser.add_argument(
+#         "--lengths",
+#         required=True,
+#         help="Lengths in m: comma list (1000,2000,4000) or range [1000,4000,1000].",
+#     )
+#     parser.add_argument(
+#         "--output",
+#         default="data/snr_year_table.csv",
+#         help="Output CSV path. Default: data/snr_year_table.csv",
+#     )
+#     parser.add_argument(
+#         "--noise-model",
+#         default=None,
+#         help=(
+#             "Detector noise model. Use 'frequency_dependent_squeezed'/'previous' "
+#             "or 'detuned_signal_recycling'/'detuned'. Defaults to GHE_NOISE_MODEL."
+#         ),
+#     )
+#     args = parser.parse_args()
 
-    masses = parse_float_list(args.masses)
-    lengths = parse_float_list(args.lengths)
+#     masses = parse_float_list(args.masses)
+#     lengths = parse_float_list(args.lengths)
 
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+#     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    results = []
-    for length in lengths:
-        env_for_length = dict(os.environ)
-        env_for_length["LIGO_ARM_LENGTH"] = str(length)
-        print(f"\n[Length {length}] Running bestPosition.py ...")
-        run_python_file(SCR_DIR / "bestPosition.py", env=env_for_length)
-        print(f"[Length {length}] Running fourier.py ...")
-        run_python_file(SCR_DIR / "fourier.py", env=env_for_length)
+#     results = []
+#     for length in lengths:
+#         env_for_length = dict(os.environ)
+#         env_for_length["LIGO_ARM_LENGTH"] = str(length)
+#         print(f"\n[Length {length}] Running bestPosition.py ...")
+#         run_python_file(SCR_DIR / "bestPosition.py", env=env_for_length)
+#         print(f"[Length {length}] Running fourier.py ...")
+#         run_python_file(SCR_DIR / "fourier.py", env=env_for_length)
 
-        for mass in masses:
-            snr_year = calculate_snr_year_from_saved_data(
-                test_mass=mass,
-                arm_length=length,
-                noise_model=args.noise_model,
-            )
-            print(f"[Length {length}, Mass {mass}] snr_year = {snr_year:.6e}")
-            results.append(
-                {
-                    "arm_length_m": length,
-                    "test_mass_kg": mass,
-                    "snr_year": snr_year,
-                }
-            )
+#         for mass in masses:
+#             snr_year = calculate_snr_year_from_saved_data(
+#                 test_mass=mass,
+#                 arm_length=length,
+#                 noise_model=args.noise_model,
+#             )
+#             print(f"[Length {length}, Mass {mass}] snr_year = {snr_year:.6e}")
+#             results.append(
+#                 {
+#                     "arm_length_m": length,
+#                     "test_mass_kg": mass,
+#                     "snr_year": snr_year,
+#                 }
+#             )
 
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["arm_length_m", "test_mass_kg", "snr_year"])
-        writer.writeheader()
-        writer.writerows(results)
+#     output_path = Path(args.output)
+#     output_path.parent.mkdir(parents=True, exist_ok=True)
+#     with output_path.open("w", newline="", encoding="utf-8") as f:
+#         writer = csv.DictWriter(f, fieldnames=["arm_length_m", "test_mass_kg", "snr_year"])
+#         writer.writeheader()
+#         writer.writerows(results)
 
-    print(f"\nSaved table: {output_path}")
+#     print(f"\nSaved table: {output_path}")
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
