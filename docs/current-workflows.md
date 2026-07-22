@@ -8,7 +8,7 @@ python main.py --renew-source-array --source-array-num-sources 100 --source-arra
 python scr/sourceArray.py --summary-only --num-sources 1000
 python scr/sourceArray.py --summary-only --num-sources 1000 --chunk-center-approximation
 python scr/fourier.py
-python scr/quantumNoise.py --comparison-only
+python scr/quantumNoise.py
 python scr/noiseAnalysis.py
 python scr/runSNR.py --masses "20,39.6,80" --lengths "[1000,4000,1000]"
 ```

@@ -129,3 +129,34 @@ def save_snr_json(snr_year: float, output_path: str | Path) -> None:
         json.dumps({"snr_year": snr_year}, indent=2),
         encoding="utf-8",
     )
+
+
+def calculate_snr_from_phasor(
+    phasor: complex,
+    gw_frequency_hz: float,
+    *,
+    noise_config: NoiseConfig | None = None,
+    detector_config: DetectorConfig | None = None,
+) -> float:
+    """
+    Estimate the 1-year SNR from a monochromatic phasor sum.
+
+    The phasor ``H = Σ A_i exp(j φ_i)`` represents the total strain amplitude at
+    the dominant GW frequency ``f_gw``.  For a single-bin signal the integral
+    collapses to::
+
+        SNR² = |H|² · T_year / S_h(f_gw)
+    """
+
+    active_noise = noise_config or NoiseConfig()
+    active_detector = detector_config or DetectorConfig()
+
+    freq = np.array([gw_frequency_hz], dtype=float)
+    noise_psd = get_noise_psd(
+        freq,
+        noise_config=active_noise,
+        detector_config=active_detector,
+    )
+
+    snr_squared = abs(phasor) ** 2 * YEAR_SECONDS / float(noise_psd[0])
+    return float(np.sqrt(snr_squared))

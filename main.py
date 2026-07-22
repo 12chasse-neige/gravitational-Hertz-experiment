@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ghe.config import RunConfig, build_time_axis
+from ghe.config import RunConfig, SourceConfig, build_time_axis
 from ghe.paths import (
     SOURCE_ARRAY_DISTRIBUTION_FILE,
     SOURCE_ARRAY_NPZ_FILE,
@@ -32,8 +32,9 @@ from ghe.signal import (
     calculate_single_source_response,
     calculate_source_array_signal_from_file,
     choose_source_array_input,
+    compute_phasor_sum_from_file,
 )
-from ghe.snr import calculate_snr, save_snr_json
+from ghe.snr import calculate_snr, calculate_snr_from_phasor, save_snr_json
 from ghe.source_array.generation import write_source_array_csv, write_source_array_npz
 from ghe.source_array.io import read_source_array
 from ghe.spectrum import calculate_spectrum, save_spectrum_arrays, save_spectrum_npz
@@ -159,6 +160,16 @@ def parse_arguments() -> argparse.Namespace:
         default=None,
         help="Optional run output directory. Writes config, signal, spectrum, and SNR artifacts there.",
     )
+    parser.add_argument(
+        "--use-mono-approx",
+        action="store_true",
+        help=(
+            "Use the monochromatic phasor-sum approximation for a fast SNR "
+            "estimate.  Extracts amplitude and phase per source via "
+            "get_signal_amplitude_and_phase and sums them as a complex phasor "
+            "instead of building the full time-domain signal and FFT."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -216,6 +227,34 @@ def renew_source_array(
     return input_path
 
 
+def _run_monochromatic(args: argparse.Namespace, run_dir: Path | None) -> None:
+    """Fast SNR estimate using the monochromatic phasor-sum approximation."""
+
+    source_config = SourceConfig()
+    source_array_input = args.source_array_input
+    if source_array_input is None:
+        source_array_input = choose_source_array_input()
+
+    print("\nComputing monochromatic phasor sum ...")
+    phasor = compute_phasor_sum_from_file(
+        source_array_input,
+        config=source_config,
+        chunk_size=args.source_array_chunk_size,
+    )
+
+    gw_freq_hz = source_config.gw_frequency_hz
+    snr_year = calculate_snr_from_phasor(phasor, gw_freq_hz)
+
+    print(f"GW frequency         = {gw_freq_hz:.1f} Hz")
+    print(f"Coherent phasor |H|  = {abs(phasor):.6e}")
+    print(f"Phasor argument      = {np.angle(phasor):.6f} rad")
+    print(f"Calculated SNR (1 yr, monochromatic) = {snr_year:.4e}")
+
+    if run_dir is not None:
+        np.save(run_dir / "phasor.npy", np.array([phasor.real, phasor.imag]))
+        save_snr_json(snr_year, run_dir / "snr.json")
+
+
 def main() -> None:
     """Run the end-to-end source-array signal, spectrum, and SNR calculation."""
 
@@ -243,6 +282,10 @@ def main() -> None:
         run_dir = make_run_dir(run_dir.name, root=run_dir.parent)
         RunConfig.from_environment().to_json(run_dir / "config.json")
 
+    if args.use_mono_approx:
+        _run_monochromatic(args, run_dir)
+        return
+
     # The expensive part: for every source row, evaluate the detector response on
     # the shared time grid and add it coherently after phase compensation.
     time_axis = build_time_axis()
@@ -263,7 +306,7 @@ def main() -> None:
     # ``calculate_snr`` loads the saved arrays so this CLI still exercises the
     # same file-based workflow that older scripts used.
     snr_year = calculate_snr(TOTAL_MAGNITUDE_FILE, TOTAL_FREQS_FILE)
-    print(f"Calculated SNR (1 year) = {snr_year:.4e}")
+    print(f"Calculated SNR (1 year) = {snr_year:.10e}")
     if run_dir is not None:
         save_snr_json(snr_year, run_dir / "snr.json")
 

@@ -32,6 +32,7 @@ from .geometry import rotation_body_to_detector, spherical_unit_vector
 from .metric import _calculate_metric_response_prepared
 from .paths import SOURCE_ARRAY_DISTRIBUTION_FILE, SOURCE_ARRAY_NPZ_FILE
 from .source_array.io import read_source_array
+from .source_array.phase import get_signal_amplitude_and_phase
 
 
 def source_phase_time_offset(row: np.void, config: SourceConfig) -> float:
@@ -191,3 +192,57 @@ def calculate_source_array_signal_from_file(
         config=config,
         chunk_size=chunk_size,
     )
+
+
+def compute_phasor_sum(
+    source_array: np.ndarray,
+    *,
+    config: SourceConfig | None = None,
+    chunk_size: int = 10_000,
+) -> complex:
+    """
+    Compute the coherent phasor sum of all source amplitudes.
+
+    For each source, the raw amplitude *A_i* and phase *φ_i* at *t=0* are
+    recovered via ``get_signal_amplitude_and_phase``.  The stored GW phase
+    correction ``gw_phase_offset_rad`` is then applied to align every source
+    with the reference, producing the complex sum::
+
+        H = Σ A_i · exp(j · (φ_i − gw_offset_i))
+
+    ``|H|`` is the total coherent strain amplitude at the dominant GW frequency.
+    """
+
+    active_config = config or SourceConfig()
+    phasor_sum = complex(0.0, 0.0)
+
+    for chunk in iter_loaded_source_chunks(source_array, chunk_size):
+        for row in chunk:
+            amplitude, raw_phase = get_signal_amplitude_and_phase(
+                row["theta_src"].item(),
+                row["phi_src"].item(),
+                row["theta_rot"].item(),
+                row["phi_rot"].item(),
+                row["distance_to_detector_m"].item(),
+                config=active_config,
+            )
+            gw_offset = row["gw_phase_offset_rad"].item()
+            phasor_sum += complex(
+                amplitude * np.cos(raw_phase - gw_offset),
+                amplitude * np.sin(raw_phase - gw_offset),
+            )
+
+    return phasor_sum
+
+
+def compute_phasor_sum_from_file(
+    input_path: str | Path | None = None,
+    *,
+    config: SourceConfig | None = None,
+    chunk_size: int = 10_000,
+) -> complex:
+    """Load a source-array file and compute the monochromatic phasor sum."""
+
+    source_path = Path(input_path) if input_path is not None else choose_source_array_input()
+    source_array = read_source_array(source_path)
+    return compute_phasor_sum(source_array, config=config, chunk_size=chunk_size)

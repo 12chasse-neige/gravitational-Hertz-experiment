@@ -7,6 +7,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import argparse
+import os
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,6 @@ import numpy as np
 from ghe.config import DetectorConfig, IMG_DIR
 from ghe.noise import (
     get_detuned_signal_recycling_noise_psd,
-    get_quantum_noise_psd,
     squeeze_quantum_noise_with_varying_angle,
 )
 
@@ -57,77 +57,6 @@ def get_gwinc_quantum_asd(freq: np.ndarray, squeeze_db: float, srm: float = 1.0,
     return trace["Quantum"].asd
 
 
-def plot_noise_curve_before_and_after_squeezing(squeeze_db: float = 10.0) -> None:
-    gwinc, _ = require_gwinc()
-    import matplotlib.pyplot as plt
-
-    freq = np.linspace(100, 1000, 10000)
-
-    plt.figure(figsize=(10, 6))
-    noise_psd = get_quantum_noise_psd(freq)
-    noise_asd = np.sqrt(noise_psd)
-    plt.plot(
-        freq,
-        noise_asd,
-        label="Quantum noise (model, unsqueezed)",
-        color="blue",
-        linewidth=2,
-    )
-
-    budget = gwinc.load_budget("aLIGO")
-    budget.ifo.Optics.SRM.Transmittance = 1
-    trace = budget.run(freq=freq)
-    aLIGO_noise = trace["Quantum"]
-    plt.plot(
-        freq,
-        aLIGO_noise.asd,
-        label="aLIGO quantum noise (gwinc)",
-        color="red",
-        linewidth=2,
-    )
-
-    plt.grid(True, which="both", linestyle="--", alpha=0.4)
-    plt.xlabel("Frequency [Hz]")
-    plt.ylabel("Quantum noise [1/sqrt(Hz)]")
-    plt.legend(loc="upper right", fontsize="small")
-    plt.title("Quantum noise before squeezing (ASD)")
-    before_squeezing_path = IMG_DIR / "Quantum Noise (Before Squeezing).png"
-    plt.savefig(before_squeezing_path, dpi=300)
-    plt.close()
-    print(f"Saved figure: {before_squeezing_path}")
-
-    plt.figure(figsize=(10, 6))
-    psd_sqz = squeeze_quantum_noise_with_varying_angle(freq, squeeze_db=squeeze_db)
-    noise_sqz_asd = np.sqrt(psd_sqz)
-    plt.plot(
-        freq,
-        noise_sqz_asd,
-        label=f"Quantum Noise (model, {squeeze_db:.0f} dB squeeze)",
-        color="blue",
-        linewidth=2,
-    )
-
-    gwinc_sqz_asd = get_gwinc_quantum_asd(freq, squeeze_db=squeeze_db)
-    plt.plot(
-        freq,
-        gwinc_sqz_asd,
-        label=f"aLIGO Quantum Noise (gwinc, {squeeze_db:.0f} dB)",
-        color="red",
-        linewidth=2,
-    )
-
-    plt.grid(True, which="both", linestyle="--", alpha=0.4)
-    plt.xlabel("Frequency [Hz]")
-    plt.ylabel("Quantum noise [1/sqrt(Hz)]")
-    plt.legend(loc="upper right", fontsize="small")
-    plt.title("Quantum noise after squeezing (ASD)")
-    after_squeezing_path = IMG_DIR / "Quantum Noise (After Squeezing).png"
-    plt.savefig(after_squeezing_path, dpi=300)
-    plt.close()
-    print(f"Saved figure: {after_squeezing_path}")
-
-
-
 def plot_noise_curve_with_detuned_interferometer(
     *,
     output_path: Path = IMG_DIR / "Quantum Noise (With Detuned Interferometer).png",
@@ -136,7 +65,7 @@ def plot_noise_curve_with_detuned_interferometer(
     points: int = 10000,
     squeeze_db: float = 10.0,
     detector_config: DetectorConfig | None = None,
-) -> None:
+) -> float:
     if freq_max_hz <= freq_min_hz:
         raise ValueError("freq_max_hz must be greater than freq_min_hz.")
     if points < 2:
@@ -146,7 +75,10 @@ def plot_noise_curve_with_detuned_interferometer(
     # The quantum-noise formulas are singular at DC, so compute just above 0 Hz
     # while displaying the requested 0 Hz lower axis bound.
     calculation_min_hz = max(freq_min_hz, 1.0)
-    freq = np.linspace(calculation_min_hz, freq_max_hz, points)
+    freq = np.geomspace(calculation_min_hz, freq_max_hz, points)
+    target_frequency_hz = active_detector.resonance_frequency_hz
+    if freq_min_hz <= target_frequency_hz <= freq_max_hz:
+        freq = np.unique(np.append(freq, target_frequency_hz))
     previous_asd = np.sqrt(
         squeeze_quantum_noise_with_varying_angle(
             freq,
@@ -161,43 +93,125 @@ def plot_noise_curve_with_detuned_interferometer(
             config=active_detector,
         )
     )
-    gwinc_asd = get_gwinc_quantum_asd(freq, squeeze_db=squeeze_db, srm=active_detector.T_SRM, l_sr=active_detector.length_SR, phi_sr=active_detector.phi_SR)
+    # Keep the GWINC curve as an aLIGO reference. The two analytic curves below
+    # then isolate the effect of the project's model and its detuned SR extension.
+    gwinc_asd = get_gwinc_quantum_asd(freq, squeeze_db=squeeze_db)
 
+    target_detuned_asd = float(
+        np.sqrt(
+            get_detuned_signal_recycling_noise_psd(
+                np.array([target_frequency_hz]),
+                squeeze_db=squeeze_db,
+                config=active_detector,
+            )[0]
+        )
+    )
+    target_asd_exponent = int(np.floor(np.log10(target_detuned_asd)))
+    target_asd_mantissa = target_detuned_asd / 10.0**target_asd_exponent
+
+    matplotlib_cache_dir = Path(os.getenv("TMPDIR", "/tmp")) / "ghe-matplotlib-cache"
+    matplotlib_cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(matplotlib_cache_dir))
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.loglog(freq, gwinc_asd, label=f"gwinc aLIGO ({squeeze_db:.0f} dB)", linewidth=2)
-    ax.loglog(freq, previous_asd, label="previous model", linewidth=2)
-    ax.loglog(
-        freq,
-        detuned_asd,
-        label=(
-            "detuned interferometer"
-            f"(T_SRM={active_detector.T_SRM:g}, L_SR={active_detector.length_SR:g} m)"
-        ),
-        linewidth=2,
-    )
-    ax.set_xlim(freq_min_hz, freq_max_hz)
-    ax.grid(True, linestyle="--", alpha=0.4)
-    ax.set_xlabel("Frequency [Hz]")
-    ax.set_ylabel("Quantum noise [1/sqrt(Hz)]")
-    ax.set_title("Quantum Noise Curves (ASD)")
-    ax.legend(loc="best", fontsize="small")
-    fig.tight_layout()
+    paper_style = {
+        "font.family": "STIXGeneral",
+        "mathtext.fontset": "stix",
+        "font.size": 8.5,
+        "axes.labelsize": 8.5,
+        "xtick.labelsize": 7.5,
+        "ytick.labelsize": 7.5,
+        "axes.linewidth": 0.75,
+        "xtick.major.width": 0.75,
+        "ytick.major.width": 0.75,
+        "xtick.minor.width": 0.55,
+        "ytick.minor.width": 0.55,
+        "legend.fontsize": 7.2,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    }
+    blue = "#0072B2"
+    vermillion = "#D55E00"
+    bluish_green = "#009E73"
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=300)
-    plt.close(fig)
+    with plt.rc_context(paper_style):
+        fig, ax = plt.subplots(figsize=(7.2, 3.8))
+        ax.loglog(
+            freq,
+            gwinc_asd,
+            color=blue,
+            linestyle="-",
+            linewidth=1.4,
+            label=rf"GWINC aLIGO quantum noise + {squeeze_db:g} dB squeezing",
+        )
+        ax.loglog(
+            freq,
+            previous_asd,
+            color=vermillion,
+            linestyle="--",
+            linewidth=1.4,
+            label=rf"Analytic model + {squeeze_db:g} dB FD squeezing",
+        )
+        ax.loglog(
+            freq,
+            detuned_asd,
+            color=bluish_green,
+            linestyle="-.",
+            linewidth=1.45,
+            label=rf"Detuned SR model + {squeeze_db:g} dB FD squeezing",
+        )
+        ax.axvline(target_frequency_hz, color="0.55", linestyle=":", linewidth=0.9)
+        ax.plot(
+            target_frequency_hz,
+            target_detuned_asd,
+            marker="o",
+            markersize=4.2,
+            markerfacecolor="white",
+            markeredgecolor=bluish_green,
+            markeredgewidth=1.0,
+            zorder=5,
+        )
+        ax.annotate(
+            rf"$f_0={target_frequency_hz:g}\,\mathrm{{Hz}}$"
+            "\n"
+            rf"$\sqrt{{S_h}}={target_asd_mantissa:.2f}\times10^{{{target_asd_exponent}}}"
+            rf"\,\mathrm{{Hz}}^{{-1/2}}$",
+            xy=(target_frequency_hz, target_detuned_asd),
+            xytext=(-8, 31),
+            textcoords="offset points",
+            ha="right",
+            va="bottom",
+            fontsize=7.2,
+            color="0.2",
+            arrowprops={"arrowstyle": "-", "color": "0.45", "linewidth": 0.7},
+        )
+        ax.set_xlim(freq_min_hz, freq_max_hz)
+        ax.grid(which="major", color="0.88", linewidth=0.65)
+        ax.grid(which="minor", color="0.94", linewidth=0.4)
+        ax.set_xlabel(r"Frequency $f$ [Hz]")
+        ax.set_ylabel(r"Quantum-noise ASD $\sqrt{S_h(f)}$ [$\mathrm{Hz}^{-1/2}$]")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.tick_params(direction="out", length=3.2)
+        ax.legend(frameon=False, loc="lower left", handlelength=3.0)
+        fig.subplots_adjust(left=0.12, right=0.99, bottom=0.16, top=0.98)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, dpi=600, bbox_inches="tight", pad_inches=0.03)
+        vector_output_path = output_path.with_suffix(".pdf")
+        if vector_output_path != output_path:
+            fig.savefig(vector_output_path, bbox_inches="tight", pad_inches=0.03)
+        plt.close(fig)
     print(f"Saved figure: {output_path}")
+    print(
+        f"Detuned ASD at {target_frequency_hz:g} Hz = "
+        f"{target_detuned_asd:.17e} Hz^(-1/2)"
+    )
+    return target_detuned_asd
 
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot quantum-noise model comparisons.")
-    parser.add_argument(
-        "--comparison-only",
-        action="store_true",
-        help="Only draw the gwinc/previous/detuned comparison figure.",
-    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -251,8 +265,6 @@ def main() -> None:
     if args.t_srm is not None:
         detector_config = replace(detector_config, T_SRM=args.t_srm, phi_SR=None)
 
-    if not args.comparison_only:
-        plot_noise_curve_before_and_after_squeezing(squeeze_db=args.squeeze_db)
     plot_noise_curve_with_detuned_interferometer(
         output_path=args.output,
         freq_min_hz=args.freq_min,

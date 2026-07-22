@@ -59,7 +59,7 @@ The scripts are now thin compatibility wrappers. New reusable code should go in 
 		```
 	- Compare gwinc, previous, and detuned signal-recycling noise curves:
 		```bash
-		python scr/quantumNoise.py --comparison-only
+		python scr/quantumNoise.py
 		```
 	- Sweep arm length and test mass:
 		```bash
