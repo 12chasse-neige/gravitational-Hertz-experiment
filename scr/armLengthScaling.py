@@ -17,8 +17,8 @@ import numpy as np
 from ghe.config import (
     DATA_DIR,
     DetectorConfig,
-    IMG_DIR,
     NoiseConfig,
+    PAPER_FIGURES_DIR,
     SamplingConfig,
     SourceConfig,
 )
@@ -413,7 +413,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=IMG_DIR / "Arm Length Scaling.png",
+        default=PAPER_FIGURES_DIR / "Arm Length Scaling.png",
         help="Output figure path.",
     )
     parser.add_argument(

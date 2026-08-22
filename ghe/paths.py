@@ -6,12 +6,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCR_DIR = REPO_ROOT / "scr"
 DATA_DIR = REPO_ROOT / "data"
-IMG_DIR = REPO_ROOT / "img"
+PAPER_DIR = REPO_ROOT / "paper"
+PAPER_FIGURES_DIR = PAPER_DIR / "figures"
 RUNS_DIR = REPO_ROOT / "runs"
 
 # Backward-compatible aliases for external callers that imported the old names.
 SCRIPTS_DIR = SCR_DIR
-IMAGES_DIR = IMG_DIR
+IMG_DIR = PAPER_FIGURES_DIR
+IMAGES_DIR = PAPER_FIGURES_DIR
 
 BEST_POSITION_FILE = DATA_DIR / "bestPosition.txt"
 BEST_POSITION_JSON_FILE = DATA_DIR / "bestPosition.json"
@@ -33,7 +35,7 @@ def ensure_project_dirs() -> None:
     """Create standard output directories if they do not exist."""
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    IMG_DIR.mkdir(parents=True, exist_ok=True)
+    PAPER_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
 

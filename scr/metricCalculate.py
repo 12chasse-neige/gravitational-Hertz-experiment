@@ -11,7 +11,12 @@ if __package__ in (None, ""):
 
 import numpy as np
 
-from ghe.config import BEST_POSITION_FILE, IMG_DIR, ExperimentConfig, build_time_axis
+from ghe.config import (
+    BEST_POSITION_FILE,
+    PAPER_FIGURES_DIR,
+    ExperimentConfig,
+    build_time_axis,
+)
 from ghe.geometry import rotation_body_to_detector, spherical_unit_vector
 from ghe.metric import (
     calculate_delta_t,
@@ -180,7 +185,7 @@ def plot_single_source_signal(
 def signal_test(
     *,
     arm_length_m: float = 4000.0,
-    output_path: Path = IMG_DIR / "Signal.png",
+    output_path: Path = PAPER_FIGURES_DIR / "Signal.png",
 ) -> None:
     t = build_time_axis()
     config = ExperimentConfig(L=float(arm_length_m))

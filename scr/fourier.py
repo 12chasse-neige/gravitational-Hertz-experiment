@@ -10,10 +10,10 @@ import numpy as np
 
 from ghe.config import (
     FREQS_FILE,
-    IMG_DIR,
     INT_TIME,
     MAGNITUDE_FILE,
     NUM,
+    PAPER_FIGURES_DIR,
     SamplingConfig,
     build_time_axis,
 )
@@ -52,7 +52,8 @@ def plot(inputSignal, fft_magnitude, freqs, time_axis=None):
     axes[1].set_xlim(1, 1000)
 
     plt.tight_layout()
-    plt.savefig(IMG_DIR / "Fouriered Signal.png")
+    PAPER_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    plt.savefig(PAPER_FIGURES_DIR / "Fouriered Signal.png")
 
 
 def main():

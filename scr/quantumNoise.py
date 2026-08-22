@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from ghe.config import DetectorConfig, IMG_DIR
+from ghe.config import DetectorConfig, PAPER_FIGURES_DIR
 from ghe.noise import (
     get_detuned_signal_recycling_noise_psd,
     squeeze_quantum_noise_with_varying_angle,
@@ -59,7 +59,9 @@ def get_gwinc_quantum_asd(freq: np.ndarray, squeeze_db: float, srm: float = 1.0,
 
 def plot_noise_curve_with_detuned_interferometer(
     *,
-    output_path: Path = IMG_DIR / "Quantum Noise (With Detuned Interferometer).png",
+    output_path: Path = (
+        PAPER_FIGURES_DIR / "Quantum Noise (With Detuned Interferometer).png"
+    ),
     freq_min_hz: float = 10.0,
     freq_max_hz: float = 1000.0,
     points: int = 10000,
@@ -215,7 +217,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=IMG_DIR / "Quantum Noise (With Detuned Interferometer).png",
+        default=(
+            PAPER_FIGURES_DIR / "Quantum Noise (With Detuned Interferometer).png"
+        ),
         help="Output path for the comparison figure.",
     )
     parser.add_argument(

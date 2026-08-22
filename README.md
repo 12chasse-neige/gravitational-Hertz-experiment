@@ -67,7 +67,7 @@ The scripts are now thin compatibility wrappers. New reusable code should go in 
 		```
 	- Plot SNR results:
 		```bash
-		python scr/plotSNRCurve.py --input data/snr_year_table.csv --output "img/SNR (3D).png"
+		python scr/plotSNRCurve.py --input data/snr_year_table.csv --output "paper/figures/SNR (3D).png"
 		```
 	- Preview a source array:
 		```bash
@@ -85,7 +85,7 @@ The scripts are now thin compatibility wrappers. New reusable code should go in 
 - `data/source_array_distribution.csv`: compatibility source-array table
 - `data/source_array_distribution.npz`: preferred binary source-array table for generated small and medium arrays
 - `data/snr_year_table.csv`: SNR sweep results
-- `img/Signal.png`, `img/Fouriered Signal.png`, `img/Quantum Noise (Curve Comparison).png`: Plots
+- `paper/figures/`: Generated plots, including the figures embedded in the manuscript
 - `runs/<name>/`: optional reproducible run output created with `python main.py --run-dir runs/<name>`
 
 ## Notes
