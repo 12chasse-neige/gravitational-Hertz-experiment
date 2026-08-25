@@ -159,7 +159,9 @@ def plot_single_source_signal(
     }
 
     with plt.rc_context(paper_style):
-        fig, ax = plt.subplots(figsize=(4.8, 2.75))
+        # Match the 7.2-inch canvas used by the paper's other full-width
+        # figures so that labels and strokes have the same rendered scale.
+        fig, ax = plt.subplots(figsize=(7.2, 3.8))
         ax.plot(time_s * 1e3, scaled_response, color="#0072B2", linewidth=1.45)
         ax.axhline(0.0, color="0.55", linestyle=":", linewidth=0.9, zorder=1)
         ax.set_xlabel(r"Time $t$ [ms]")
@@ -173,7 +175,7 @@ def plot_single_source_signal(
         ax.spines["right"].set_visible(False)
         ax.tick_params(direction="out", length=3.2)
 
-        fig.subplots_adjust(left=0.16, right=0.99, bottom=0.20, top=0.98)
+        fig.subplots_adjust(left=0.12, right=0.99, bottom=0.16, top=0.98)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_path, dpi=600, bbox_inches="tight", pad_inches=0.03)
         vector_output_path = output_path.with_suffix(".pdf")
