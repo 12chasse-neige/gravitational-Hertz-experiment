@@ -246,7 +246,7 @@ M = 1 + \rho^2 \mathrm{e}^{4\imath\Phi} - 2\rho \mathrm{e}^{2\imath\Phi} \left( 
 $$
 
 \[
-\phi = \left. \frac{\omega_{o} l}{c} \right|_{\text{mod} \, 2 \pi} \quad \Phi = \arctan \frac{\Omega}{\gamma} + \left. \frac{\Omega l}{c} \right|_{\text{mod} \, 2 \pi}
+\phi = \left. \frac{\omega_{o} l}{c} \right|_{\text{mod} \, 2 \pi} \quad \Phi = \arctan \frac{\Omega}{\gamma}
 \]
 
 The signal transfer functions $\bar{s}$ for the two quadratures are given by
