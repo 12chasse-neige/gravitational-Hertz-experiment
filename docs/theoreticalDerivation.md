@@ -168,7 +168,7 @@ and $I_{SQL}$ is the power when $\gamma = \Omega$, defined as
 $$
 I_{SQL} = \frac{m L^{2} \gamma^{4}}{4 \omega_{o}}
 $$
-Notice that the laser power $I_{o}$ is the power in the F-P cavities.
+Notice that the laser power $I_{o}$ is the power at the beam splitter.
 
 ### Magnifying at the PRM
 
@@ -176,7 +176,7 @@ The laser power circling in the cavities is different from the laser power input
 $$
 G_{arm} = \frac{P_{in}}{P_{circ}} = \frac{T_{ITM}}{1 - \sqrt{R_{ITM} R_{ETM}}}
 $$
-Using the approximation $T_{ETM} \ll E_{ITM}$, the ratio is near
+Using the approximation $T_{ETM} \ll T_{ITM}$, the ratio is near
 $$
 \frac{P_{in}}{P_{circ}} \approx \frac{T_{ITM}}{4}
 $$
@@ -221,7 +221,7 @@ D_1 = -(1 + \rho e^{2i(\beta + \Phi)}) \sin \phi, \quad D_2 = -(-1 + \rho e^{2i(
 $$
 
 \[
-\phi = \left. \frac{\omega_{o} l}{c} \right|_{\text{mod} \, 2 \pi}  \quad \Phi = \arctan \frac{\Omega}{\gamma} + \left. \frac{\Omega l}{c} \right|_{\text{mod} \, 2 \pi}
+\phi = \left. \frac{\omega_{o} l}{c} \right|_{\text{mod} \, 2 \pi}  \quad \Phi = \arctan \frac{\Omega}{\gamma}
 \]
 
 When we induce squeezing to  further reduce the quantum noise, we can get the psd curve for the squeezed noise[^3] 
@@ -261,8 +261,7 @@ $$
 And the squeezing matrices are defined as
 \[
 \mathcal{D} (\lambda) = \begin{pmatrix}
-\cos \lambda & \sin \lambda \\
-- \sin \lambda & \cos \lambda
+\cos \lambda & \sin \lambda \\ - \sin \lambda & \cos \lambda
 \end{pmatrix}, \quad 
 \mathcal{S} (r) = \begin{pmatrix}
 e^{r} & 0 \\
@@ -279,7 +278,8 @@ S_{h} (\rho, \Omega) =
 \frac{h^{2}_{SQL} e^{-2r}}{2 \mathcal{K}} \frac{(1 - \rho^{2})^{2} \left( \sin(2\phi) - \mathcal{K} \cos^2(\phi) \right)^{2} + \left[ (1 + \rho^2) \left( \cos(2\phi) + \frac{\mathcal{K}}{2} \sin(2\phi) \right) - 2\rho \cos(2\Phi) \right]^{2}}{ (1 - \rho^{2}) \cos^{2} \phi (1 - 2 \rho \cos (2 \Phi) + \rho^{2})}
 \]
 
-To make sure that the optical resonance is at the 
+To make sure that the optical resonance is at the $600 \mathrm{Hz}$, we must adjust the $\phi$ to let the resonant 
+peak be accurately the destination frequency.
 
 [^1]: Sayed Abolfazl Mirdehghan, 1 - Fibrous polymeric composites, Editor(s): Masoud Latifi, In The Textile Institute Book Series, Engineered Polymeric Fibrous Materials, Woodhead Publishing, 2021, Pages 1-58, ISBN 9780128243817, https://doi.org/10.1016/B978-0-12-824381-7.00012-3. (https://www.sciencedirect.com/science/article/pii/B9780128243817000123)
 [^2]: Buonanno, A., & Chen, Y. (2001). Quantum noise in second generation, signal-recycled laser interferometric gravitational-wave detectors. *Physical Review D*, *64*(4), 042006. https://doi.org/10.1103/PhysRevD.64.042006
