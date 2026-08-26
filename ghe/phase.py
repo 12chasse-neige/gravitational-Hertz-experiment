@@ -94,10 +94,7 @@ def get_resonance_phase_for_detuned_signal_recycling(
 
     omega = 2 * np.pi * f_res
     gamma = active_config.T_ITM * active_config.c / (4 * active_config.length)
-    phi_fp = np.arctan(omega / gamma) + np.mod(
-        omega * active_config.length_SR / active_config.c,
-        2 * np.pi,
-    )
+    phi_fp = np.arctan(omega / gamma)
     rho = np.sqrt(1.0 - active_config.T_SRM)
     kappa = get_coupling_constant(omega, config=active_config)
 
