@@ -1,10 +1,4 @@
-"""
-Typed configuration for physics, detector, sampling, and run settings.
-
-The original scripts mixed constants, environment variables, and file paths.
-This module keeps run-critical values serializable while preserving legacy names
-such as ``ExperimentConfig``, ``INT_TIME``, and ``NUM`` for compatibility.
-"""
+"""Typed configuration loaded from the project YAML files in ``configs/``."""
 
 from __future__ import annotations
 
@@ -12,14 +6,17 @@ import json
 import os
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
+import yaml
 
 from .paths import (
     BEST_POSITION_FILE,
     BEST_POSITION_JSON_FILE,
+    CONFIG_DIR,
     DATA_DIR,
+    DETECTOR_CONFIG_FILE,
     FREQS_FILE,
     IMG_DIR,
     IMAGES_DIR,
@@ -31,31 +28,215 @@ from .paths import (
     SCRIPTS_DIR,
     SOURCE_ARRAY_DISTRIBUTION_FILE,
     SOURCE_ARRAY_NPZ_FILE,
+    SOURCE_CONFIG_FILE,
     TOTAL_FREQS_FILE,
     TOTAL_MAGNITUDE_FILE,
     YEAR_SECONDS,
 )
 
 
+class ConfigFileError(ValueError):
+    """Raised when a project YAML configuration is missing or malformed."""
+
+
+def _read_yaml(path: Path) -> Mapping[str, Any]:
+    try:
+        with path.open("r", encoding="utf-8") as stream:
+            document = yaml.safe_load(stream)
+    except FileNotFoundError as exc:
+        raise ConfigFileError(f"Configuration file not found: {path}") from exc
+    except yaml.YAMLError as exc:
+        raise ConfigFileError(f"Could not parse YAML configuration {path}: {exc}") from exc
+
+    if not isinstance(document, Mapping):
+        raise ConfigFileError(f"Configuration root must be a mapping: {path}")
+    return document
+
+
+def _yaml_value(document: Mapping[str, Any], path: Path, *keys: str) -> Any:
+    value: Any = document
+    traversed: list[str] = []
+    for key in keys:
+        traversed.append(key)
+        if not isinstance(value, Mapping) or key not in value:
+            dotted_key = ".".join(traversed)
+            raise ConfigFileError(f"Missing required key {dotted_key!r} in {path}")
+        value = value[key]
+    return value
+
+
+def _float_value(document: Mapping[str, Any], path: Path, *keys: str) -> float:
+    value = _yaml_value(document, path, *keys)
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        dotted_key = ".".join(keys)
+        raise ConfigFileError(f"{dotted_key!r} in {path} must be a number") from exc
+
+
+def _optional_float_value(
+    document: Mapping[str, Any], path: Path, *keys: str
+) -> float | None:
+    value = _yaml_value(document, path, *keys)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        dotted_key = ".".join(keys)
+        raise ConfigFileError(f"{dotted_key!r} in {path} must be a number or null") from exc
+
+
+def _int_value(document: Mapping[str, Any], path: Path, *keys: str) -> int:
+    value = _yaml_value(document, path, *keys)
+    if isinstance(value, bool):
+        raise ConfigFileError(f"{'.'.join(keys)!r} in {path} must be an integer")
+    try:
+        converted = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigFileError(f"{'.'.join(keys)!r} in {path} must be an integer") from exc
+    if converted != value:
+        raise ConfigFileError(f"{'.'.join(keys)!r} in {path} must be an integer")
+    return converted
+
+
+def _bool_value(document: Mapping[str, Any], path: Path, *keys: str) -> bool:
+    value = _yaml_value(document, path, *keys)
+    if not isinstance(value, bool):
+        raise ConfigFileError(f"{'.'.join(keys)!r} in {path} must be true or false")
+    return value
+
+
+_SOURCE_YAML = _read_yaml(SOURCE_CONFIG_FILE)
+_DETECTOR_YAML = _read_yaml(DETECTOR_CONFIG_FILE)
+
+_CONSTANT_DEFAULTS = {
+    "G": _float_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Constants", "GravitationalConstant"),
+    "hbar": _float_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "Constants", "ReducedPlanckConstant"
+    ),
+    "c": _float_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Constants", "SpeedOfLight"),
+}
+
+_SAMPLING_DEFAULTS = {
+    "duration_s": _float_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Sampling", "Duration"),
+    "sample_rate_hz": _float_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "Sampling", "SampleRate"
+    ),
+}
+
+_NOISE_DEFAULTS = {
+    "model": str(_yaml_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Noise", "Model")),
+    "squeeze_db": _float_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Noise", "SqueezingDB"),
+    "min_frequency_hz": _float_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "Noise", "FrequencyBand", "Minimum"
+    ),
+    "max_frequency_hz": _float_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "Noise", "FrequencyBand", "Maximum"
+    ),
+}
+
+_SOURCE_DEFAULTS = {
+    "num": _int_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Source", "Rotor", "HoleCount"),
+    "H": _float_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Source", "Rotor", "Length"),
+    "D": _float_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Source", "Rotor", "Diameter"),
+    "d": _float_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Source", "Rotor", "HoleDiameter"),
+    "s": _float_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Source", "Rotor", "HoleOffset"),
+    "rho": _float_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Source", "Material", "Density"),
+    "G": _CONSTANT_DEFAULTS["G"],
+    "c": _CONSTANT_DEFAULTS["c"],
+    "omega": _float_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "Source", "Rotor", "AngularVelocity"
+    ),
+}
+_SOURCE_DISTANCE_ARM_LENGTHS = _float_value(
+    _SOURCE_YAML,
+    SOURCE_CONFIG_FILE,
+    "Source",
+    "Placement",
+    "DetectorDistanceArmLengths",
+)
+
+
+def _detector_defaults_from_yaml(
+    document: Mapping[str, Any], path: Path
+) -> dict[str, float | None]:
+    """Translate standard GWINC IFO keys into ``DetectorConfig`` field names."""
+
+    stages = _yaml_value(document, path, "Suspension", "Stage")
+    if not isinstance(stages, list) or not stages or not isinstance(stages[0], Mapping):
+        raise ConfigFileError(f"'Suspension.Stage' in {path} must be a non-empty list")
+    try:
+        testmass = float(stages[0]["Mass"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ConfigFileError(f"'Suspension.Stage[0].Mass' in {path} must be a number") from exc
+
+    # GWINC stores optical losses as dimensionless fractions. The internal
+    # detector model historically stores these two values in ppm.
+    loss_mirror_ppm = 1.0e6 * _float_value(document, path, "Optics", "Loss")
+    loss_bs_ppm = 1.0e6 * _float_value(document, path, "Optics", "BSLoss")
+    return {
+        "testmass": testmass,
+        "length": _float_value(document, path, "Infrastructure", "Length"),
+        "length_SR": _float_value(document, path, "Optics", "SRM", "CavityLength"),
+        "phi_SR": _optional_float_value(document, path, "Optics", "SRM", "Tunephase"),
+        "wavelength": _float_value(document, path, "Laser", "Wavelength"),
+        "power": _float_value(document, path, "Laser", "Power"),
+        "T_PRM": _float_value(document, path, "Optics", "PRM", "Transmittance"),
+        "T_ITM": _float_value(document, path, "Optics", "ITM", "Transmittance"),
+        "T_ETM": _float_value(document, path, "Optics", "ETM", "Transmittance"),
+        "T_SRM": _float_value(document, path, "Optics", "SRM", "Transmittance"),
+        "loss_mirror_ppm": loss_mirror_ppm,
+        "loss_BS_ppm": loss_bs_ppm,
+    }
+
+
+_DETECTOR_DEFAULTS = _detector_defaults_from_yaml(_DETECTOR_YAML, DETECTOR_CONFIG_FILE)
+
+_SOURCE_ARRAY_DEFAULTS = {
+    "num_sources": _int_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "SourceArray", "NumberOfSources"
+    ),
+    "chunk_size": _int_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "SourceArray", "ChunkSize"),
+    "spacing": _optional_float_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "SourceArray", "Spacing"),
+    "theta_array": _optional_float_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "SourceArray", "CenterDirection", "Theta"
+    ),
+    "phi_array": _optional_float_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "SourceArray", "CenterDirection", "Phi"
+    ),
+    "optimize_each_source": _bool_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "SourceArray", "OptimizeEachSource"
+    ),
+    "chunk_center_approximation": _bool_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "SourceArray", "ChunkCenterApproximation"
+    ),
+    "main_renewal_chunk_center_approximation": _bool_value(
+        _SOURCE_YAML,
+        SOURCE_CONFIG_FILE,
+        "SourceArray",
+        "MainRenewalChunkCenterApproximation",
+    ),
+    "approximation_chunk_size": _int_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "SourceArray", "ApproximationChunkSize"
+    ),
+    "recompute_best_position": _bool_value(
+        _SOURCE_YAML, SOURCE_CONFIG_FILE, "SourceArray", "RecomputeBestPosition"
+    ),
+}
+
+
 def _env_float(name: str, default: float) -> float:
     return float(os.getenv(name, str(default)))
 
 
-def _env_optional_float(name: str) -> float | None:
+def _env_optional_float(name: str, default: float | None) -> float | None:
     raw = os.getenv(name)
-    return None if raw is None else float(raw)
+    return default if raw is None else float(raw)
 
 
 def _default_arm_length() -> float:
-    return _env_float("LIGO_ARM_LENGTH", 4000.0)
-
-
-def _env_int(name: str, default: int) -> int:
-    return int(os.getenv(name, str(default)))
-
-
-def _env_str(name: str, default: str) -> str:
-    return os.getenv(name, default)
+    return _env_float("LIGO_ARM_LENGTH", _DETECTOR_DEFAULTS["length"])
 
 
 @dataclass(frozen=True)
@@ -68,9 +249,13 @@ class SamplingConfig:
     variables for compatibility with old workflows.
     """
 
-    duration_s: float = field(default_factory=lambda: _env_float("GHE_INT_TIME", 0.01))
+    duration_s: float = field(
+        default_factory=lambda: _env_float("GHE_INT_TIME", _SAMPLING_DEFAULTS["duration_s"])
+    )
     sample_rate_hz: float = field(
-        default_factory=lambda: _env_float("GHE_SAMPLE_RATE_HZ", 120000.0)
+        default_factory=lambda: _env_float(
+            "GHE_SAMPLE_RATE_HZ", _SAMPLING_DEFAULTS["sample_rate_hz"]
+        )
     )
 
     @property
@@ -90,25 +275,27 @@ class SourceConfig:
     """
     Physical constants and source-side parameters for one rotating source.
 
-    The dominant quadrupole radiation occurs at ``2*omega``.  ``R`` is derived
-    from the interferometer arm length so the source-detector distance is always
-    ``1.5 * L``.
+    The dominant quadrupole radiation occurs at ``2*omega``. ``R`` is derived
+    from the interferometer arm length using the distance ratio configured in
+    ``configs/source.yaml``.
     """
 
-    num: int = 2                        # number of the holes on single rotor
-    H: float = 2.0                      # length of the rotor (m)
-    D: float = 5.0                      # diameter of the rotor (m)
-    d: float = 1.0                      # diameter of the holes (m)
-    s: float = 1.5                      # distance from the center of the rotor to the center of the holes (m)
-    R: float = field(default_factory=lambda: 1.5 * _default_arm_length())  # distance from source to detector (m)
-    rho: float = 1750.0                 # mass density of the rotor material (kg/m^3)
-    G: float = 6.674e-11                # gravitational constant (m^3 kg^-1 s^-2)
-    c: float = 2.998e8                  # speed of light (m/s)
-    omega: float = 300.0 * 2.0 * np.pi  # angular velocity of the rotor (rad/s)
+    num: int = _SOURCE_DEFAULTS["num"]  # number of holes on one rotor
+    H: float = _SOURCE_DEFAULTS["H"]  # rotor length (m)
+    D: float = _SOURCE_DEFAULTS["D"]  # rotor diameter (m)
+    d: float = _SOURCE_DEFAULTS["d"]  # hole diameter (m)
+    s: float = _SOURCE_DEFAULTS["s"]  # rotor center to hole center (m)
+    R: float = field(
+        default_factory=lambda: _SOURCE_DISTANCE_ARM_LENGTHS * _default_arm_length()
+    )
+    rho: float = _SOURCE_DEFAULTS["rho"]  # rotor density (kg/m^3)
+    G: float = _SOURCE_DEFAULTS["G"]  # gravitational constant (m^3 kg^-1 s^-2)
+    c: float = _SOURCE_DEFAULTS["c"]  # speed of light (m/s)
+    omega: float = _SOURCE_DEFAULTS["omega"]  # rotor angular velocity (rad/s)
     L: float = field(default_factory=_default_arm_length)  # arm length used for metric response (m)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "R", 1.5 * self.L)
+        object.__setattr__(self, "R", _SOURCE_DISTANCE_ARM_LENGTHS * self.L)
 
     @property
     def gw_angular_frequency(self) -> float:
@@ -132,21 +319,41 @@ class DetectorConfig:
     at the source gravitational-wave frequency.
     """
 
-    testmass: float = field(default_factory=lambda: _env_float("LIGO_TEST_MASS", 39.6))                         # end test mass (kg)
+    testmass: float = field(
+        default_factory=lambda: _env_float("LIGO_TEST_MASS", _DETECTOR_DEFAULTS["testmass"])
+    )
     length: float = field(default_factory=_default_arm_length)                                                   # arm length (m)
-    length_SR: float = field(default_factory=lambda: _env_float("LIGO_SIGNAL_RECYCLE_ARM_LENGTH", 55.0))        # signal recycle cavity length (m)
-    phi_SR: float | None = field(default_factory=lambda: _env_optional_float("LIGO_SIGNAL_RECYCLE_DETUNE_PHASE"))  # signal recycle cavity detune phase (rad)
-    resonance_frequency_hz: float | None = None    # SR resonance target frequency (Hz)
-    hbar: float = 1.05457e-34                 # reduced Planck constant (J s)   
-    wavelength: float = 1064e-9               # laser wavelength (m)
-    c: float = SourceConfig.c                 # speed of light (m/s)  
-    power: float = 125.0                      # input laser power (W)
-    T_PRM: float = 0.03                       # transmittance of the power recycling mirror
-    T_ITM: float = 0.014                      # transmittance of the input test mass mirror
-    T_ETM: float = 5e-6                       # transmittance of the end test mass mirror
-    T_SRM: float = field(default_factory=lambda: _env_float("LIGO_SRM_TRANSMITTANCE", 1e-5))      # transmittance of the signal recycle mirror
-    loss_mirror_ppm: float = 40.0             # round-trip loss per mirror (ppm)
-    loss_BS_ppm: float = 500.0                # loss at beam splitter (ppm)
+    length_SR: float = field(
+        default_factory=lambda: _env_float(
+            "LIGO_SIGNAL_RECYCLE_ARM_LENGTH", _DETECTOR_DEFAULTS["length_SR"]
+        )
+    )
+    phi_SR: float | None = field(
+        default_factory=lambda: _env_optional_float(
+            "LIGO_SIGNAL_RECYCLE_DETUNE_PHASE", _DETECTOR_DEFAULTS["phi_SR"]
+        )
+    )
+    resonance_frequency_hz: float | None = None
+    hbar: float = _CONSTANT_DEFAULTS["hbar"]
+    wavelength: float = _DETECTOR_DEFAULTS["wavelength"]
+    c: float = _CONSTANT_DEFAULTS["c"]
+    power: float = _DETECTOR_DEFAULTS["power"]
+    T_PRM: float = _DETECTOR_DEFAULTS["T_PRM"]
+    T_ITM: float = _DETECTOR_DEFAULTS["T_ITM"]
+    T_ETM: float = _DETECTOR_DEFAULTS["T_ETM"]
+    T_SRM: float = field(
+        default_factory=lambda: _env_float("LIGO_SRM_TRANSMITTANCE", _DETECTOR_DEFAULTS["T_SRM"])
+    )
+    loss_mirror_ppm: float = _DETECTOR_DEFAULTS["loss_mirror_ppm"]
+    loss_BS_ppm: float = _DETECTOR_DEFAULTS["loss_BS_ppm"]
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "DetectorConfig":
+        """Load detector fields from any standard GWINC ``ifo.yaml`` file."""
+
+        input_path = Path(path)
+        values = _detector_defaults_from_yaml(_read_yaml(input_path), input_path)
+        return cls(**values)
 
     def __post_init__(self) -> None:
         from .phase import (
@@ -192,31 +399,28 @@ class SourceArrayConfig:
     is enabled.
     """
 
-    num_sources: int = 10_000_000
-    chunk_size: int = 100_000
-    spacing: float | None = None
-    theta_array: float | None = None
-    phi_array: float | None = None
-    optimize_each_source: bool = True
-    chunk_center_approximation: bool = False
-    approximation_chunk_size: int = 1_000
-    recompute_best_position: bool = False
+    num_sources: int = _SOURCE_ARRAY_DEFAULTS["num_sources"]
+    chunk_size: int = _SOURCE_ARRAY_DEFAULTS["chunk_size"]
+    spacing: float | None = _SOURCE_ARRAY_DEFAULTS["spacing"]
+    theta_array: float | None = _SOURCE_ARRAY_DEFAULTS["theta_array"]
+    phi_array: float | None = _SOURCE_ARRAY_DEFAULTS["phi_array"]
+    optimize_each_source: bool = _SOURCE_ARRAY_DEFAULTS["optimize_each_source"]
+    chunk_center_approximation: bool = _SOURCE_ARRAY_DEFAULTS["chunk_center_approximation"]
+    main_renewal_chunk_center_approximation: bool = _SOURCE_ARRAY_DEFAULTS[
+        "main_renewal_chunk_center_approximation"
+    ]
+    approximation_chunk_size: int = _SOURCE_ARRAY_DEFAULTS["approximation_chunk_size"]
+    recompute_best_position: bool = _SOURCE_ARRAY_DEFAULTS["recompute_best_position"]
 
 
 @dataclass(frozen=True)
 class NoiseConfig:
     """SNR integration band, squeezing level, and detector-noise model."""
 
-    # model: str = field(
-    #     default_factory=lambda: _env_str(
-    #         "GHE_NOISE_MODEL",
-    #         "frequency_dependent_squeezed",
-    #     )
-    # )
-    model: str = "detuned_signal_recycling"
-    squeeze_db: float = 10.0
-    min_frequency_hz: float = 1.0
-    max_frequency_hz: float = 5000.0
+    model: str = _NOISE_DEFAULTS["model"]
+    squeeze_db: float = _NOISE_DEFAULTS["squeeze_db"]
+    min_frequency_hz: float = _NOISE_DEFAULTS["min_frequency_hz"]
+    max_frequency_hz: float = _NOISE_DEFAULTS["max_frequency_hz"]
 
 
 @dataclass(frozen=True)
@@ -273,7 +477,10 @@ def build_time_axis() -> np.ndarray:
 __all__ = [
     "BEST_POSITION_FILE",
     "BEST_POSITION_JSON_FILE",
+    "CONFIG_DIR",
+    "ConfigFileError",
     "DATA_DIR",
+    "DETECTOR_CONFIG_FILE",
     "DetectorConfig",
     "ExperimentConfig",
     "FREQS_FILE",
@@ -291,6 +498,7 @@ __all__ = [
     "SCRIPTS_DIR",
     "SOURCE_ARRAY_DISTRIBUTION_FILE",
     "SOURCE_ARRAY_NPZ_FILE",
+    "SOURCE_CONFIG_FILE",
     "SamplingConfig",
     "SourceArrayConfig",
     "SourceConfig",

@@ -281,6 +281,24 @@ S_{h} (\rho, \Omega) =
 To make sure that the optical resonance is at the $600 \mathrm{Hz}$, we must adjust the $\phi$ to let the resonant 
 peak be accurately the destination frequency.
 
+## Single Source Near Field Analysis
+
+The radiation may be dominated by multipole terms. So we need a careful analysis of the higher pole terms in the expansion.
+\[
+h_{\mu \nu} (t, \vec{x}) = 4 G \int \dd[3]{x'} \frac{T_{\mu \nu} (t - \frac{|\vec{x} - \vec{x'}|}{c}, \vec{x'})}{|\vec{x} - \vec{x'}|}
+\]
+Expand this term, using the approximation condition $\Omega d \ll c$ to make the $t - \frac{|\vec{x} - \vec{x’}|}{c} \to t - \frac{r}{c}$ in the EMT, and expand the denominator, we can get the first 3 terms for the radiation
+
+### The 1/r Term
+
+Parameter for the 1/r term is
+\[
+4G \int \dd[3]{x'} T_{\mu \nu} (t_{ret}, \vec{x'})
+\]
+
+
+
+
 [^1]: Sayed Abolfazl Mirdehghan, 1 - Fibrous polymeric composites, Editor(s): Masoud Latifi, In The Textile Institute Book Series, Engineered Polymeric Fibrous Materials, Woodhead Publishing, 2021, Pages 1-58, ISBN 9780128243817, https://doi.org/10.1016/B978-0-12-824381-7.00012-3. (https://www.sciencedirect.com/science/article/pii/B9780128243817000123)
 [^2]: Buonanno, A., & Chen, Y. (2001). Quantum noise in second generation, signal-recycled laser interferometric gravitational-wave detectors. *Physical Review D*, *64*(4), 042006. https://doi.org/10.1103/PhysRevD.64.042006
 [^3]: Harms, J., Chen, Y., Chelkowski, S., Franzen, A., Vahlbruch, H., Danzmann, K., & Schnabel, R. (2003). Squeezed-input, optical-spring, signal-recycled gravitational-wave detectors. *Physical Review D*, *68*(4), 042001. https://doi.org/10.1103/PhysRevD.68.042001

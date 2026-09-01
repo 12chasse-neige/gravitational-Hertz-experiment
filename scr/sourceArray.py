@@ -9,7 +9,7 @@ if __package__ in (None, ""):
 import argparse
 from pathlib import Path
 
-from ghe.config import BEST_POSITION_FILE, DATA_DIR, ExperimentConfig
+from ghe.config import BEST_POSITION_FILE, DATA_DIR, SourceArrayConfig
 from ghe.geometry import (
     _get_perpendicular_axis,
     cartesian_to_spherical,
@@ -25,7 +25,6 @@ from ghe.optimization import (
     solve_best_geometry,
 )
 from ghe.source_array.generation import (
-    DEFAULT_APPROXIMATION_CHUNK_SIZE,
     ArrayContext,
     build_array_context,
     build_chunk,
@@ -47,7 +46,8 @@ from ghe.source_array.strategies import (
 
 _DEFAULT_OUTPUT_FILE = DATA_DIR / "source_array_distribution.csv"
 _DEFAULT_NPZ_OUTPUT_FILE = DATA_DIR / "source_array_distribution.npz"
-_DEFAULT_APPROXIMATION_CHUNK_SIZE = DEFAULT_APPROXIMATION_CHUNK_SIZE
+_SOURCE_ARRAY_DEFAULTS = SourceArrayConfig()
+_DEFAULT_APPROXIMATION_CHUNK_SIZE = _SOURCE_ARRAY_DEFAULTS.approximation_chunk_size
 
 _build_chunk = build_chunk
 _positions_for_index_range = positions_for_index_range
@@ -79,25 +79,28 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--num-sources",
         type=int,
-        default=10_000_000,
-        help="Total number of sources in the array. Default: 10000000.",
+        default=_SOURCE_ARRAY_DEFAULTS.num_sources,
+        help=(
+            "Total number of sources in the array. "
+            f"Default: {_SOURCE_ARRAY_DEFAULTS.num_sources}."
+        ),
     )
     parser.add_argument(
         "--spacing",
         type=float,
-        default=ExperimentConfig.D * 3 / 2,
-        help="Center-to-center spacing of neighboring sources in meters. Default: source diameter D * 3/2.",
+        default=_SOURCE_ARRAY_DEFAULTS.spacing,
+        help="Center-to-center source spacing in metres. Default: source diameter D * 3/2.",
     )
     parser.add_argument(
         "--theta-array",
         type=float,
-        default=None,
+        default=_SOURCE_ARRAY_DEFAULTS.theta_array,
         help="Optional polar angle for the array center direction. Defaults to data/bestPosition.txt.",
     )
     parser.add_argument(
         "--phi-array",
         type=float,
-        default=None,
+        default=_SOURCE_ARRAY_DEFAULTS.phi_array,
         help="Optional azimuthal angle for the array center direction. Defaults to data/bestPosition.txt.",
     )
     parser.add_argument(
@@ -121,8 +124,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=100000,
-        help="Number of sources processed per chunk. Default: 100000.",
+        default=_SOURCE_ARRAY_DEFAULTS.chunk_size,
+        help=(
+            "Number of sources processed per chunk. "
+            f"Default: {_SOURCE_ARRAY_DEFAULTS.chunk_size}."
+        ),
     )
     parser.add_argument(
         "--preview",
@@ -133,12 +139,13 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--recompute-best-position",
         action="store_true",
+        default=_SOURCE_ARRAY_DEFAULTS.recompute_best_position,
         help="Run the optimizer from bestPosition.py instead of only reusing data/bestPosition.txt.",
     )
     parser.add_argument(
         "--optimize-each-source",
         action="store_true",
-        default=True,
+        default=_SOURCE_ARRAY_DEFAULTS.optimize_each_source,
         help="Run bestPosition optimization for each source individually. Enabled by default.",
     )
     parser.add_argument(
@@ -147,13 +154,24 @@ def parse_arguments() -> argparse.Namespace:
         action="store_false",
         help="Use rigidly transported rotor axes instead of per-source optimization.",
     )
-    parser.add_argument(
+    approximation_group = parser.add_mutually_exclusive_group()
+    approximation_group.add_argument(
         "--chunk-center-approximation",
+        dest="chunk_center_approximation",
         action="store_true",
         help=(
             "Speed up generation by optimizing and phase-extracting only the center "
             "source of each approximation chunk, then approximating nearby sources."
         ),
+    )
+    approximation_group.add_argument(
+        "--no-chunk-center-approximation",
+        dest="chunk_center_approximation",
+        action="store_false",
+        help="Disable chunk-center approximation and optimize each source exactly.",
+    )
+    parser.set_defaults(
+        chunk_center_approximation=_SOURCE_ARRAY_DEFAULTS.chunk_center_approximation
     )
     parser.add_argument(
         "--approximation-chunk-size",

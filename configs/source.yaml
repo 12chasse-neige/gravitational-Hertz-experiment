@@ -1,0 +1,43 @@
+# Rotating-source, sampling, and coherent-array defaults.
+
+Constants:
+  GravitationalConstant: 6.674e-11      # m^3 kg^-1 s^-2
+  ReducedPlanckConstant: 1.05457e-34    # J s
+  SpeedOfLight: 2.998e8                 # m/s
+
+Sampling:
+  Duration: 0.01                        # simulated time window, s
+  SampleRate: 120000.0                  # Hz
+
+Noise:
+  Model: detuned_signal_recycling
+  SqueezingDB: 10.0
+  FrequencyBand:
+    Minimum: 1.0                        # Hz
+    Maximum: 5000.0                     # Hz
+
+Source:
+  Rotor:
+    HoleCount: 2
+    Length: 2.0                         # axial length, m
+    Diameter: 5.0                       # rotor diameter, m
+    HoleDiameter: 1.0                   # m
+    HoleOffset: 1.5                     # rotor center to hole center, m
+    AngularVelocity: 1884.9555921538758 # rad/s (300 revolutions/s)
+  Material:
+    Density: 1750.0                     # kg/m^3
+  Placement:
+    DetectorDistanceArmLengths: 1.5     # source distance R / detector arm length L
+
+SourceArray:
+  NumberOfSources: 10000000
+  ChunkSize: 100000
+  Spacing: null                         # m; null uses 1.5 times the rotor diameter
+  CenterDirection:
+    Theta: null                         # rad; null uses the optimized position
+    Phi: null                           # rad; null uses the optimized position
+  OptimizeEachSource: true
+  ChunkCenterApproximation: false
+  MainRenewalChunkCenterApproximation: true # preserves main.py's fast renewal default
+  ApproximationChunkSize: 1000
+  RecomputeBestPosition: false

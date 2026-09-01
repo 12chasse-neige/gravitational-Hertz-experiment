@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from ghe.config import DetectorConfig, PAPER_FIGURES_DIR
+from ghe.config import DetectorConfig, NoiseConfig, PAPER_FIGURES_DIR
 from ghe.noise import (
     get_detuned_signal_recycling_noise_psd,
     squeeze_quantum_noise_with_varying_angle,
@@ -39,13 +39,23 @@ def require_gwinc() -> tuple[Any, Any]:
     return gwinc, Struct
 
 
-def get_gwinc_quantum_asd(freq: np.ndarray, squeeze_db: float, srm: float = 1.0, l_sr: float = 55.0, phi_sr: float = 0.0) -> np.ndarray:
+def get_gwinc_quantum_asd(
+    freq: np.ndarray,
+    squeeze_db: float,
+    srm: float | None = None,
+    l_sr: float | None = None,
+    phi_sr: float | None = None,
+    ifo: str | Path = "aLIGO",
+) -> np.ndarray:
     gwinc, Struct = require_gwinc()
 
-    budget = gwinc.load_budget("aLIGO")
-    budget.ifo.Optics.SRM.Transmittance = srm
-    budget.ifo.Optics.SRM.CavityLength = l_sr 
-    budget.ifo.Optics.SRM.Tunephase = phi_sr
+    budget = gwinc.load_budget(str(ifo))
+    if srm is not None:
+        budget.ifo.Optics.SRM.Transmittance = srm
+    if l_sr is not None:
+        budget.ifo.Optics.SRM.CavityLength = l_sr
+    if phi_sr is not None:
+        budget.ifo.Optics.SRM.Tunephase = phi_sr
     budget.ifo.Squeezer = Struct(
         Type="Freq Dependent",
         AmplitudedB=squeeze_db,
@@ -65,8 +75,9 @@ def plot_noise_curve_with_detuned_interferometer(
     freq_min_hz: float = 10.0,
     freq_max_hz: float = 1000.0,
     points: int = 10000,
-    squeeze_db: float = 10.0,
+    squeeze_db: float | None = None,
     detector_config: DetectorConfig | None = None,
+    gwinc_ifo: str | Path = "aLIGO",
 ) -> float:
     if freq_max_hz <= freq_min_hz:
         raise ValueError("freq_max_hz must be greater than freq_min_hz.")
@@ -74,6 +85,7 @@ def plot_noise_curve_with_detuned_interferometer(
         raise ValueError("points must be at least 2.")
 
     active_detector = detector_config or DetectorConfig()
+    active_squeeze_db = NoiseConfig().squeeze_db if squeeze_db is None else squeeze_db
     # The quantum-noise formulas are singular at DC, so compute just above 0 Hz
     # while displaying the requested 0 Hz lower axis bound.
     calculation_min_hz = max(freq_min_hz, 1.0)
@@ -84,26 +96,30 @@ def plot_noise_curve_with_detuned_interferometer(
     previous_asd = np.sqrt(
         squeeze_quantum_noise_with_varying_angle(
             freq,
-            squeeze_db=squeeze_db,
+            squeeze_db=active_squeeze_db,
             config=active_detector,
         )
     )
     detuned_asd = np.sqrt(
         get_detuned_signal_recycling_noise_psd(
             freq,
-            squeeze_db=squeeze_db,
+            squeeze_db=active_squeeze_db,
             config=active_detector,
         )
     )
-    # Keep the GWINC curve as an aLIGO reference. The two analytic curves below
-    # then isolate the effect of the project's model and its detuned SR extension.
-    gwinc_asd = get_gwinc_quantum_asd(freq, squeeze_db=squeeze_db)
+    # GWINC reads the selected IFO file directly; the analytic curves use the
+    # corresponding subset translated into DetectorConfig.
+    gwinc_asd = get_gwinc_quantum_asd(
+        freq,
+        squeeze_db=active_squeeze_db,
+        ifo=gwinc_ifo,
+    )
 
     target_detuned_asd = float(
         np.sqrt(
             get_detuned_signal_recycling_noise_psd(
                 np.array([target_frequency_hz]),
-                squeeze_db=squeeze_db,
+                squeeze_db=active_squeeze_db,
                 config=active_detector,
             )[0]
         )
@@ -144,7 +160,7 @@ def plot_noise_curve_with_detuned_interferometer(
             color=blue,
             linestyle="-",
             linewidth=1.4,
-            label=rf"GWINC aLIGO quantum noise + {squeeze_db:g} dB squeezing",
+            label=rf"GWINC quantum noise + {active_squeeze_db:g} dB squeezing",
         )
         ax.loglog(
             freq,
@@ -152,7 +168,7 @@ def plot_noise_curve_with_detuned_interferometer(
             color=vermillion,
             linestyle="--",
             linewidth=1.4,
-            label=rf"Analytic model + {squeeze_db:g} dB FD squeezing",
+            label=rf"Analytic model + {active_squeeze_db:g} dB FD squeezing",
         )
         ax.loglog(
             freq,
@@ -160,7 +176,7 @@ def plot_noise_curve_with_detuned_interferometer(
             color=bluish_green,
             linestyle="-.",
             linewidth=1.45,
-            label=rf"Detuned SR model + {squeeze_db:g} dB FD squeezing",
+            label=rf"Detuned SR model + {active_squeeze_db:g} dB FD squeezing",
         )
         ax.axvline(target_frequency_hz, color="0.55", linestyle=":", linewidth=0.9)
         ax.plot(
@@ -213,6 +229,7 @@ def plot_noise_curve_with_detuned_interferometer(
 
 
 def parse_arguments() -> argparse.Namespace:
+    noise_defaults = NoiseConfig()
     parser = argparse.ArgumentParser(description="Plot quantum-noise model comparisons.")
     parser.add_argument(
         "--output",
@@ -243,8 +260,17 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--squeeze-db",
         type=float,
-        default=10.0,
-        help="Squeezing level in dB.",
+        default=noise_defaults.squeeze_db,
+        help=f"Squeezing level in dB. Default: {noise_defaults.squeeze_db:g}.",
+    )
+    parser.add_argument(
+        "--detector-config",
+        type=Path,
+        default=None,
+        help=(
+            "Optional GWINC ifo.yaml file used by both the GWINC reference and "
+            "the analytic detector model."
+        ),
     )
     parser.add_argument(
         "--length-sr",
@@ -263,7 +289,11 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_arguments()
-    detector_config = DetectorConfig()
+    detector_config = (
+        DetectorConfig()
+        if args.detector_config is None
+        else DetectorConfig.from_yaml(args.detector_config)
+    )
     if args.length_sr is not None:
         detector_config = replace(detector_config, length_SR=args.length_sr, phi_SR=None)
     if args.t_srm is not None:
@@ -276,6 +306,7 @@ def main() -> None:
         points=args.points,
         squeeze_db=args.squeeze_db,
         detector_config=detector_config,
+        gwinc_ifo=args.detector_config or "aLIGO",
     )
 
 

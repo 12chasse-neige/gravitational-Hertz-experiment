@@ -50,7 +50,7 @@ def _get_best_position_defaults() -> Tuple[float, float, float, float]:
 
 
 def calculate_metric_response(
-    t: float,
+    t: float = 0.0,
     theta_src: Optional[float] = None,
     phi_src: Optional[float] = None,
     theta_rot: Optional[float] = None,
@@ -77,41 +77,59 @@ def parse_arguments() -> argparse.Namespace:
             "-ts 3.1 -ps 0.0 -tr 1.57 -pr 0.0"
         )
     )
-    parser.add_argument("-t", "--time", type=str, required=True, help="current time in seconds")
+    parser.add_argument(
+        "-t",
+        "--time",
+        type=float,
+        default=0.0,
+        help="current time in seconds (default: 0)",
+    )
     parser.add_argument(
         "-ts",
         "--thetasource",
-        type=str,
-        required=True,
-        help="polar angle (detector frame) of the vector from detector toward the source",
+        type=float,
+        default=None,
+        help=(
+            "polar angle (detector frame) of the vector from detector toward the "
+            "source (default: cached best position)"
+        ),
     )
     parser.add_argument(
         "-ps",
         "--phisource",
-        type=str,
-        required=True,
-        help="azimuthal angle (detector frame) of the vector from detector toward the source",
+        type=float,
+        default=None,
+        help=(
+            "azimuthal angle (detector frame) of the vector from detector toward "
+            "the source (default: cached best position)"
+        ),
     )
     parser.add_argument(
         "-tr",
         "--thetarotation",
-        type=str,
-        required=True,
-        help="polar angle (detector frame) of the rotor symmetry axis (body +z)",
+        type=float,
+        default=None,
+        help=(
+            "polar angle (detector frame) of the rotor symmetry axis (body +z; "
+            "default: cached best position)"
+        ),
     )
     parser.add_argument(
         "-pr",
         "--phirotation",
-        type=str,
-        required=True,
-        help="azimuthal angle (detector frame) of the rotor symmetry axis (body +z)",
+        type=float,
+        default=None,
+        help=(
+            "azimuthal angle (detector frame) of the rotor symmetry axis (body +z; "
+            "default: cached best position)"
+        ),
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="show detailed output")
     parser.add_argument("-o", "--output", type=str, default=None, help="path for the output file")
     parser.add_argument(
         "-R",
         "--distance",
-        type=str,
+        type=float,
         default=None,
         help="distance from source to detector in meters (overrides default R)",
     )
@@ -186,11 +204,11 @@ def plot_single_source_signal(
 
 def signal_test(
     *,
-    arm_length_m: float = 4000.0,
+    arm_length_m: float | None = None,
     output_path: Path = PAPER_FIGURES_DIR / "Signal.png",
 ) -> None:
     t = build_time_axis()
-    config = ExperimentConfig(L=float(arm_length_m))
+    config = ExperimentConfig() if arm_length_m is None else ExperimentConfig(L=float(arm_length_m))
     h_values = np.array(
         [calculate_metric_response(ti, config=config) for ti in t],
         dtype=float,
@@ -207,12 +225,12 @@ if __name__ == "__main__":
             print(f"Output file: {args.output}")
 
     result = calculate_metric_response(
-        float(args.time),
-        float(args.thetasource),
-        float(args.phisource),
-        float(args.thetarotation),
-        float(args.phirotation),
-        R=float(args.distance) if args.distance is not None else None,
+        args.time,
+        args.thetasource,
+        args.phisource,
+        args.thetarotation,
+        args.phirotation,
+        R=args.distance,
     )
     print(result)
 

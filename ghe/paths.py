@@ -5,10 +5,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCR_DIR = REPO_ROOT / "scr"
+CONFIG_DIR = REPO_ROOT / "configs"
 DATA_DIR = REPO_ROOT / "data"
 PAPER_DIR = REPO_ROOT / "paper"
 PAPER_FIGURES_DIR = PAPER_DIR / "figures"
 RUNS_DIR = REPO_ROOT / "runs"
+
+DETECTOR_CONFIG_FILE = CONFIG_DIR / "detector.yaml"
+SOURCE_CONFIG_FILE = CONFIG_DIR / "source.yaml"
 
 # Backward-compatible aliases for external callers that imported the old names.
 SCRIPTS_DIR = SCR_DIR
@@ -17,6 +21,7 @@ IMAGES_DIR = PAPER_FIGURES_DIR
 
 BEST_POSITION_FILE = DATA_DIR / "bestPosition.txt"
 BEST_POSITION_JSON_FILE = DATA_DIR / "bestPosition.json"
+SINGLE_SOURCE_METRIC_FILE = DATA_DIR / "single_source_metric.json"
 
 SOURCE_ARRAY_DISTRIBUTION_FILE = DATA_DIR / "source_array_distribution.csv"
 SOURCE_ARRAY_NPZ_FILE = DATA_DIR / "source_array_distribution.npz"

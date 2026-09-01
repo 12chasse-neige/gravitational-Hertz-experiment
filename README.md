@@ -15,6 +15,7 @@ This project models a gravitational-wave source based on a rotating hole array a
 
 ## Module Map
 - `scr/metricCalculate.py` -> `ghe.metric`, `ghe.geometry`
+- `scr/singleSourceNearField.py` -> `ghe.near_field`
 - `scr/bestPosition.py` -> `ghe.optimization`
 - `scr/sourceArray.py` -> `ghe.source_array.*`
 - `scr/fourier.py` -> `ghe.spectrum`
@@ -23,6 +24,25 @@ This project models a gravitational-wave source based on a rotating hole array a
 - `main.py` -> `ghe.signal`, `ghe.spectrum`, `ghe.snr`
 
 The scripts are now thin compatibility wrappers. New reusable code should go in `ghe/`.
+
+## Configuration
+
+Project defaults are stored in two structured YAML files:
+
+- `configs/detector.yaml`: GWINC-compatible detector parameter names and units
+- `configs/source.yaml`: source physics, constants, sampling, noise, and source-array defaults
+
+`ghe/config.py` reads both files when a process starts and uses their values as
+the dataclass defaults. Existing environment variables remain optional overrides,
+and explicit Python arguments or CLI flags take precedence for one run. For
+example, these commands do not modify the YAML files:
+
+```bash
+python scr/quantumNoise.py --length-sr 70 --t-srm 0.2
+python scr/quantumNoise.py --detector-config /path/to/gwinc/ifo.yaml
+python scr/sourceArray.py --num-sources 1000 --chunk-size 100 --spacing 8
+python scr/armLengthScaling.py --frequency 800 --squeeze-db 8
+```
 
 ## Installation
 
@@ -53,6 +73,10 @@ The scripts are now thin compatibility wrappers. New reusable code should go in 
 		```bash
 		python scr/fourier.py
 		```
+	- Directly integrate the single-rotor near-field metric tensor at the detector vertex:
+		```bash
+		python scr/singleSourceNearField.py
+		```
 	- Regenerate the signal spectrum from current parameters and compute SNR:
 		```bash
 		python scr/noiseAnalysis.py
@@ -82,6 +106,7 @@ The scripts are now thin compatibility wrappers. New reusable code should go in 
 - `data/freqs.npy`, `data/magnitude.npy`: single-source FFT results
 - `data/total_freqs.npy`, `data/total_magnitude.npy`: source-array FFT results
 - `data/bestPosition.txt`, `data/bestPosition.json`: optimized geometry
+- `data/single_source_metric.json`: direct single-rotor metric tensor at the detector vertex
 - `data/source_array_distribution.csv`: compatibility source-array table
 - `data/source_array_distribution.npz`: preferred binary source-array table for generated small and medium arrays
 - `data/snr_year_table.csv`: SNR sweep results

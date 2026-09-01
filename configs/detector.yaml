@@ -1,0 +1,29 @@
+# Detector defaults using the same key names and units as GWINC ifo.yaml files.
+# Additional GWINC sections may be added without affecting this project loader.
+
+Infrastructure:
+  Length: 4000.0                        # m
+
+Suspension:
+  # GWINC stage numbering starts at the mirror/test mass.
+  Stage:
+    - Mass: 39.6                        # kg
+
+Laser:
+  Wavelength: 1.064e-6                  # m
+  Power: 125.0                          # W
+
+Optics:
+  Type: SignalRecycled
+  Loss: 40.0e-6                         # average per-mirror power loss
+  BSLoss: 0.5e-3                        # beam-splitter power loss
+  ITM:
+    Transmittance: 0.014
+  ETM:
+    Transmittance: 5.0e-6
+  PRM:
+    Transmittance: 0.03
+  SRM:
+    Transmittance: 1.0e-5
+    CavityLength: 55.0                  # m, ITM to SRM distance
+    Tunephase: null                     # rad; null tunes to the source GW frequency

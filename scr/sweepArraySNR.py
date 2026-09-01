@@ -17,7 +17,7 @@ import argparse
 import csv
 from pathlib import Path
 
-from ghe.config import DATA_DIR, SourceConfig
+from ghe.config import DATA_DIR, SourceArrayConfig, SourceConfig
 from ghe.signal import compute_phasor_sum
 from ghe.snr import calculate_snr_from_phasor
 from ghe.source_array.generation import build_array_context, iter_source_chunks
@@ -151,6 +151,7 @@ def write_results(rows: list[dict[str, int | float]], output_path: Path) -> None
 
 
 def parse_arguments() -> argparse.Namespace:
+    source_array_defaults = SourceArrayConfig()
     parser = argparse.ArgumentParser(
         description="Sweep coherent-array size and quantify deviation from SNR proportional to N."
     )
@@ -169,14 +170,20 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--generation-chunk-size",
         type=int,
-        default=100_000,
-        help="Number of generated rows held at once. Default: 100000.",
+        default=source_array_defaults.chunk_size,
+        help=(
+            "Number of generated rows held at once. "
+            f"Default: {source_array_defaults.chunk_size}."
+        ),
     )
     parser.add_argument(
         "--approximation-chunk-size",
         type=int,
-        default=1_000,
-        help="Sources sharing one optimized anchor in chunk-center mode. Default: 1000.",
+        default=source_array_defaults.approximation_chunk_size,
+        help=(
+            "Sources sharing one optimized anchor in chunk-center mode. "
+            f"Default: {source_array_defaults.approximation_chunk_size}."
+        ),
     )
     parser.add_argument(
         "--spacing",

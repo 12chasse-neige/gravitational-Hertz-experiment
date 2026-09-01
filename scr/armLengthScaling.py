@@ -357,7 +357,9 @@ def plot_results(
 
 
 def parse_arguments() -> argparse.Namespace:
-    defaults = SamplingConfig()
+    sampling_defaults = SamplingConfig()
+    source_defaults = SourceConfig()
+    noise_defaults = NoiseConfig()
     parser = argparse.ArgumentParser(
         description=(
             "Sweep interferometer arm length, plotting detuned ASD at the source "
@@ -372,38 +374,47 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--frequency",
         type=float,
-        default=600.0,
-        help="Target GW frequency in Hz. Default: 600.",
+        default=source_defaults.gw_frequency_hz,
+        help=(
+            "Target GW frequency in Hz. "
+            f"Default: {source_defaults.gw_frequency_hz:g}."
+        ),
     )
     parser.add_argument(
         "--squeeze-db",
         type=float,
-        default=10.0,
-        help="Squeezing level in dB. Default: 10.",
+        default=noise_defaults.squeeze_db,
+        help=f"Squeezing level in dB. Default: {noise_defaults.squeeze_db:g}.",
     )
     parser.add_argument(
         "--duration",
         type=float,
-        default=defaults.duration_s,
-        help=f"Signal duration in seconds. Default: {defaults.duration_s:g}.",
+        default=sampling_defaults.duration_s,
+        help=f"Signal duration in seconds. Default: {sampling_defaults.duration_s:g}.",
     )
     parser.add_argument(
         "--sample-rate",
         type=float,
-        default=defaults.sample_rate_hz,
-        help=f"Sampling rate in Hz. Default: {defaults.sample_rate_hz:g}.",
+        default=sampling_defaults.sample_rate_hz,
+        help=f"Sampling rate in Hz. Default: {sampling_defaults.sample_rate_hz:g}.",
     )
     parser.add_argument(
         "--snr-min-frequency",
         type=float,
-        default=1.0,
-        help="Minimum frequency included in SNR integration. Default: 1.",
+        default=noise_defaults.min_frequency_hz,
+        help=(
+            "Minimum frequency included in SNR integration. "
+            f"Default: {noise_defaults.min_frequency_hz:g}."
+        ),
     )
     parser.add_argument(
         "--snr-max-frequency",
         type=float,
-        default=5000.0,
-        help="Maximum frequency included in SNR integration. Default: 5000.",
+        default=noise_defaults.max_frequency_hz,
+        help=(
+            "Maximum frequency included in SNR integration. "
+            f"Default: {noise_defaults.max_frequency_hz:g}."
+        ),
     )
     parser.add_argument(
         "--optimize-geometry",

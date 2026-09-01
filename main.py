@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ghe.config import RunConfig, SourceConfig, build_time_axis
+from ghe.config import RunConfig, SourceArrayConfig, SourceConfig, build_time_axis
 from ghe.paths import (
     SOURCE_ARRAY_DISTRIBUTION_FILE,
     SOURCE_ARRAY_NPZ_FILE,
@@ -39,8 +39,9 @@ from ghe.source_array.generation import write_source_array_csv, write_source_arr
 from ghe.source_array.io import read_source_array
 from ghe.spectrum import calculate_spectrum, save_spectrum_arrays, save_spectrum_npz
 
-DEFAULT_SOURCE_ARRAY_NUM_SOURCES = 10_000_000
-DEFAULT_SOURCE_ARRAY_CHUNK_SIZE = 100_000
+_SOURCE_ARRAY_DEFAULTS = SourceArrayConfig()
+DEFAULT_SOURCE_ARRAY_NUM_SOURCES = _SOURCE_ARRAY_DEFAULTS.num_sources
+DEFAULT_SOURCE_ARRAY_CHUNK_SIZE = _SOURCE_ARRAY_DEFAULTS.chunk_size
 
 
 def read_csv_line(ID: int) -> np.ndarray:
@@ -127,20 +128,41 @@ def parse_arguments() -> argparse.Namespace:
             f"Default: {DEFAULT_SOURCE_ARRAY_CHUNK_SIZE}."
         ),
     )
-    parser.add_argument(
+    optimization_group = parser.add_mutually_exclusive_group()
+    optimization_group.add_argument(
+        "--optimize-each-source",
+        dest="optimize_each_source",
+        action="store_true",
+        help="Optimize each source during regeneration.",
+    )
+    optimization_group.add_argument(
         "--no-optimize-each-source",
         dest="optimize_each_source",
         action="store_false",
-        default=True,
         help="Use the faster rigid-transport source-array approximation during regeneration.",
     )
-    parser.add_argument(
-        "--source-array-exact-optimization",
+    parser.set_defaults(optimize_each_source=_SOURCE_ARRAY_DEFAULTS.optimize_each_source)
+
+    approximation_group = parser.add_mutually_exclusive_group()
+    approximation_group.add_argument(
+        "--source-array-chunk-center-approximation",
+        dest="source_array_chunk_center_approximation",
         action="store_true",
+        help="Use one exact optimization per chunk during source-array regeneration.",
+    )
+    approximation_group.add_argument(
+        "--source-array-exact-optimization",
+        dest="source_array_chunk_center_approximation",
+        action="store_false",
         help=(
             "Disable chunk-center approximation and optimize every source exactly "
             "when per-source optimization is enabled."
         ),
+    )
+    parser.set_defaults(
+        source_array_chunk_center_approximation=(
+            _SOURCE_ARRAY_DEFAULTS.main_renewal_chunk_center_approximation
+        )
     )
     parser.add_argument(
         "--source-array-format",
@@ -267,7 +289,7 @@ def main() -> None:
             chunk_size=args.source_array_chunk_size,
             optimize_each_source=args.optimize_each_source,
             chunk_center_approximation=(
-                args.optimize_each_source and not args.source_array_exact_optimization
+                args.optimize_each_source and args.source_array_chunk_center_approximation
             ),
             output_format=args.source_array_format,
         )
