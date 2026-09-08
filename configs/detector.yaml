@@ -2,12 +2,12 @@
 # Additional GWINC sections may be added without affecting this project loader.
 
 Infrastructure:
-  Length: 4000.0                        # m
+  Length: 3995.0                        # m
 
 Suspension:
   # GWINC stage numbering starts at the mirror/test mass.
   Stage:
-    - Mass: 39.6                        # kg
+    - Mass: 200                      # kg
 
 Laser:
   Wavelength: 1.064e-6                  # m
