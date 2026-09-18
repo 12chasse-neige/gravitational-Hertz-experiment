@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-import scr.noiseAnalysis as noise_analysis
+import scripts.noiseAnalysis as noise_analysis
 from ghe.config import SamplingConfig
 from ghe.spectrum import Spectrum
 
@@ -27,14 +27,17 @@ def test_calculate_snr_regenerates_spectrum_by_default() -> None:
         return 12.5
 
     sampling = SamplingConfig(duration_s=1.0, sample_rate_hz=4.0)
-    with patch.object(
-        noise_analysis,
-        "generate_current_spectrum",
-        fake_generate_current_spectrum,
-    ), patch.object(
-        noise_analysis,
-        "_calculate_snr_from_arrays",
-        fake_calculate_snr_from_arrays,
+    with (
+        patch.object(
+            noise_analysis,
+            "generate_current_spectrum",
+            fake_generate_current_spectrum,
+        ),
+        patch.object(
+            noise_analysis,
+            "_calculate_snr_from_arrays",
+            fake_calculate_snr_from_arrays,
+        ),
     ):
         result = noise_analysis.calculate_snr(
             sampling_config=sampling,

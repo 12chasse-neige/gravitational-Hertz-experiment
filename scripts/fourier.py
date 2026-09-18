@@ -22,17 +22,20 @@ from ghe.spectrum import fourier
 
 def build_default_signal(
     sampling_config: SamplingConfig | None = None,
+    *,
+    source_config=None,
 ) -> np.ndarray:
     """Generate the single-source signal using the active project parameters."""
 
-    from scr.metricCalculate import calculate_metric_response
+    from ghe.config import SourceConfig
+    from ghe.metric import calculate_response_phasor
+    from ghe.optimization import solve_best_geometry
+    from ghe.signal import synthesize_signal
 
-    time_axis = (
-        sampling_config.time_axis()
-        if sampling_config is not None
-        else build_time_axis()
-    )
-    return np.array([calculate_metric_response(ti) for ti in time_axis], dtype=float)
+    cfg = source_config or SourceConfig()
+    time_axis = (sampling_config or SamplingConfig()).time_axis()
+    H = calculate_response_phasor(*solve_best_geometry(config=cfg).angles, config=cfg)
+    return synthesize_signal(H, time_axis, cfg)
 
 
 def plot(inputSignal, fft_magnitude, freqs, time_axis=None):
@@ -60,8 +63,11 @@ def main():
     time_axis = build_time_axis()
     h_values = build_default_signal()
     inputSignal, fft_magnitude, freqs = fourier(h_values, sampling_rate=NUM / INT_TIME)
-    np.save(FREQS_FILE, freqs)
-    np.save(MAGNITUDE_FILE, fft_magnitude)
+    from ghe.spectrum import Spectrum, save_spectrum_arrays
+
+    save_spectrum_arrays(
+        Spectrum(inputSignal, fft_magnitude, freqs), MAGNITUDE_FILE, FREQS_FILE
+    )
     plot(inputSignal, fft_magnitude, freqs, time_axis=time_axis)
 
 

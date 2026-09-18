@@ -14,7 +14,7 @@ from ghe.config import (
     SourceArrayConfig,
     SourceConfig,
 )
-from scr import quantumNoise, sourceArray
+from scripts import quantumNoise, sourceArray
 
 
 def _read_yaml(path):
@@ -49,12 +49,14 @@ def test_dataclass_defaults_come_from_yaml_files() -> None:
     assert source.R == distance_ratio * source.L
     assert source_array.num_sources == source_yaml["SourceArray"]["NumberOfSources"]
     assert source_array.chunk_size == source_yaml["SourceArray"]["ChunkSize"]
-    assert source_array.chunk_center_approximation is source_yaml["SourceArray"][
-        "ChunkCenterApproximation"
-    ]
-    assert source_array.main_renewal_chunk_center_approximation is source_yaml[
-        "SourceArray"
-    ]["MainRenewalChunkCenterApproximation"]
+    assert (
+        source_array.chunk_center_approximation
+        is source_yaml["SourceArray"]["ChunkCenterApproximation"]
+    )
+    assert (
+        source_array.main_renewal_chunk_center_approximation
+        is source_yaml["SourceArray"]["MainRenewalChunkCenterApproximation"]
+    )
 
 
 def test_detector_config_loads_standard_gwinc_yaml(tmp_path) -> None:
@@ -114,7 +116,13 @@ def test_existing_cli_flags_override_yaml_defaults(monkeypatch) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
-        ["main.py", "--source-array-num-sources", "17", "--source-array-chunk-size", "3"],
+        [
+            "main.py",
+            "--source-array-num-sources",
+            "17",
+            "--source-array-chunk-size",
+            "3",
+        ],
     )
     main_args = main_cli.parse_arguments()
     assert main_args.source_array_num_sources == 17

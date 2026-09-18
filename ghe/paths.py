@@ -4,7 +4,9 @@ from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SCR_DIR = REPO_ROOT / "scr"
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+# Historical import alias; the physical directory is scripts/.
+SCR_DIR = SCRIPTS_DIR
 CONFIG_DIR = REPO_ROOT / "configs"
 DATA_DIR = REPO_ROOT / "data"
 PAPER_DIR = REPO_ROOT / "paper"
@@ -15,7 +17,6 @@ DETECTOR_CONFIG_FILE = CONFIG_DIR / "detector.yaml"
 SOURCE_CONFIG_FILE = CONFIG_DIR / "source.yaml"
 
 # Backward-compatible aliases for external callers that imported the old names.
-SCRIPTS_DIR = SCR_DIR
 IMG_DIR = PAPER_FIGURES_DIR
 IMAGES_DIR = PAPER_FIGURES_DIR
 

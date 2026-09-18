@@ -1,3 +1,10 @@
+"""Stable source-row schema: metres, radians, and seconds in named columns.
+
+The historical gw_phase_offset_rad name means response phase delay at 2*omega;
+it does not identify a radiative-only signal. It equals twice the rotor delay.
+propagation_compensation_s is diagnostic only and must not be applied again.
+"""
+
 from __future__ import annotations
 
 import numpy as np

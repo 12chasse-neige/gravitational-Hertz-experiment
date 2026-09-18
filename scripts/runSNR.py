@@ -6,7 +6,6 @@ if __package__ in (None, ""):
 
 import argparse
 import csv
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -17,7 +16,6 @@ from ghe.config import (
     FREQS_FILE,
     MAGNITUDE_FILE,
     REPO_ROOT,
-    SCR_DIR,
 )
 
 
@@ -53,12 +51,16 @@ def parse_float_list(raw: str) -> list[float]:
             continue
         values.append(float(x))
     if not values:
-        raise ValueError("Empty input. Use comma list (20,39.6,80) or range [10,100,10].")
+        raise ValueError(
+            "Empty input. Use comma list (20,39.6,80) or range [10,100,10]."
+        )
     return values
 
 
 def run_python_file(script_path: Path, env: dict[str, str]) -> None:
-    subprocess.run([sys.executable, str(script_path)], check=True, env=env, cwd=REPO_ROOT)
+    subprocess.run(
+        [sys.executable, str(script_path)], check=True, env=env, cwd=REPO_ROOT
+    )
 
 
 def calculate_snr_year_from_saved_data(
@@ -66,91 +68,76 @@ def calculate_snr_year_from_saved_data(
     arm_length: float,
     noise_model: str | None = None,
 ) -> float:
-    from ghe.config import DetectorConfig, NoiseConfig
-    from ghe.snr import calculate_snr_from_arrays
+    from ghe.config import DetectorConfig, NoiseConfig, SourceConfig
+    from ghe.snr import calculate_snr
 
-    signal_magnitude = np.load(MAGNITUDE_FILE)
-    freq = np.load(FREQS_FILE)
-    detector_config = DetectorConfig(testmass=test_mass, length=arm_length)
-    noise_config = NoiseConfig(model=noise_model) if noise_model is not None else None
-    return calculate_snr_from_arrays(
-        signal_magnitude,
-        freq,
-        noise_config=noise_config,
-        detector_config=detector_config,
+    source = SourceConfig(L=arm_length)
+    return calculate_snr(
+        MAGNITUDE_FILE,
+        FREQS_FILE,
+        source_config=source,
+        detector_config=DetectorConfig(testmass=test_mass).with_source(source),
+        noise_config=NoiseConfig(model=noise_model) if noise_model else None,
     )
 
 
-# def main() -> None:
-#     parser = argparse.ArgumentParser(
-#         description=(
-#             "Sweep LIGO test mass and arm length, recompute best angles when arm length changes, "
-#             "and output an snr_year table."
-#         )
-#     )
-#     parser.add_argument(
-#         "--masses",
-#         required=True,
-#         help="Masses in kg: comma list (20,39.6,80) or range [10,100,10].",
-#     )
-#     parser.add_argument(
-#         "--lengths",
-#         required=True,
-#         help="Lengths in m: comma list (1000,2000,4000) or range [1000,4000,1000].",
-#     )
-#     parser.add_argument(
-#         "--output",
-#         default="data/snr_year_table.csv",
-#         help="Output CSV path. Default: data/snr_year_table.csv",
-#     )
-#     parser.add_argument(
-#         "--noise-model",
-#         default=None,
-#         help=(
-#             "Detector noise model. Use 'frequency_dependent_squeezed'/'previous' "
-#             "or 'detuned_signal_recycling'/'detuned'. Defaults to GHE_NOISE_MODEL."
-#         ),
-#     )
-#     args = parser.parse_args()
+def main() -> None:
+    """Re-optimize for each L, with R derived from the configured R/L ratio.
 
-#     masses = parse_float_list(args.masses)
-#     lengths = parse_float_list(args.lengths)
+    This sweep evaluates phasors directly: it needs neither shared temporary
+    spectra nor subprocess environment overrides. Test mass changes noise only.
+    """
+    from dataclasses import asdict
+    from ghe.config import SourceConfig, DetectorConfig, NoiseConfig
+    from ghe.metric import calculate_response_phasor
+    from ghe.optimization import optimize_best_geometry
+    from ghe.snr import calculate_snr_from_phasor
+    from ghe.artifacts import model_metadata, write_metadata
 
-#     DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-#     results = []
-#     for length in lengths:
-#         env_for_length = dict(os.environ)
-#         env_for_length["LIGO_ARM_LENGTH"] = str(length)
-#         print(f"\n[Length {length}] Running bestPosition.py ...")
-#         run_python_file(SCR_DIR / "bestPosition.py", env=env_for_length)
-#         print(f"[Length {length}] Running fourier.py ...")
-#         run_python_file(SCR_DIR / "fourier.py", env=env_for_length)
-
-#         for mass in masses:
-#             snr_year = calculate_snr_year_from_saved_data(
-#                 test_mass=mass,
-#                 arm_length=length,
-#                 noise_model=args.noise_model,
-#             )
-#             print(f"[Length {length}, Mass {mass}] snr_year = {snr_year:.6e}")
-#             results.append(
-#                 {
-#                     "arm_length_m": length,
-#                     "test_mass_kg": mass,
-#                     "snr_year": snr_year,
-#                 }
-#             )
-
-#     output_path = Path(args.output)
-#     output_path.parent.mkdir(parents=True, exist_ok=True)
-#     with output_path.open("w", newline="", encoding="utf-8") as f:
-#         writer = csv.DictWriter(f, fieldnames=["arm_length_m", "test_mass_kg", "snr_year"])
-#         writer.writeheader()
-#         writer.writerows(results)
-
-#     print(f"\nSaved table: {output_path}")
+    parser = argparse.ArgumentParser(
+        description="Ideal free-mass SNR sweep over arm length and test mass"
+    )
+    parser.add_argument("--masses", required=True)
+    parser.add_argument("--lengths", required=True)
+    parser.add_argument("--output", type=Path, default=DATA_DIR / "snr_year_table.csv")
+    parser.add_argument("--noise-model", default=None)
+    args = parser.parse_args()
+    masses, lengths = parse_float_list(args.masses), parse_float_list(args.lengths)
+    if not all(np.isfinite(x) and x > 0 for x in masses + lengths):
+        raise ValueError("Masses and lengths must be finite and positive")
+    noise = NoiseConfig(model=args.noise_model) if args.noise_model else NoiseConfig()
+    rows, cases = [], []
+    for length in lengths:
+        source = SourceConfig(L=length, R=None)
+        geometry = optimize_best_geometry(config=source)
+        H = calculate_response_phasor(*geometry.angles, config=source)
+        for mass in masses:
+            detector = DetectorConfig(testmass=mass).with_source(source)
+            snr = calculate_snr_from_phasor(
+                H, source.gw_frequency_hz, detector_config=detector, noise_config=noise
+            )
+            rows.append(dict(arm_length_m=length, test_mass_kg=mass, snr_year=snr))
+            cases.append(
+                {
+                    **model_metadata(source),
+                    "geometry": asdict(geometry),
+                    "detector_config": asdict(detector),
+                    "noise_config": asdict(noise),
+                }
+            )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with args.output.open("w", newline="") as handle:
+        writer = csv.DictWriter(
+            handle, fieldnames=["arm_length_m", "test_mass_kg", "snr_year"]
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    write_metadata(
+        args.output,
+        {"cases": cases, "interpretation": "conditional ideal strain-noise proxy"},
+    )
+    print(f"Saved {len(rows)} cases to {args.output}")
 
 
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()

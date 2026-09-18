@@ -20,7 +20,9 @@ from typing import Callable
 
 import numpy as np
 
-from .config import DetectorConfig, NoiseConfig, SamplingConfig
+from .config import DetectorConfig, NoiseConfig, SamplingConfig, SourceConfig
+from .artifacts import model_metadata, read_metadata, validate_metadata, file_digest
+from dataclasses import asdict
 from .noise import get_noise_psd
 from .paths import FREQS_FILE, MAGNITUDE_FILE, YEAR_SECONDS
 
@@ -71,7 +73,9 @@ def calculate_snr_from_arrays(
 
     signal_magnitude = np.asarray(signal_magnitude, dtype=float)
     freq = np.asarray(freq, dtype=float)
-    valid_mask = (freq >= active_noise.min_frequency_hz) & (freq <= active_noise.max_frequency_hz)
+    valid_mask = (freq >= active_noise.min_frequency_hz) & (
+        freq <= active_noise.max_frequency_hz
+    )
     freq_valid = freq[valid_mask]
     signal_magnitude_valid = signal_magnitude[valid_mask]
 
@@ -106,9 +110,22 @@ def calculate_snr(
     noise_config: NoiseConfig | None = None,
     detector_config: DetectorConfig | None = None,
     sampling_config: SamplingConfig | None = None,
+    source_config: SourceConfig | None = None,
 ) -> float:
     """Load legacy spectrum arrays from disk and calculate 1-year SNR."""
 
+    metadata = read_metadata(magnitude_path)
+    validate_metadata(metadata, source_config)
+    if read_metadata(freq_path) != metadata:
+        raise ValueError("Spectrum files belong to different runs; regenerate the pair")
+    if metadata.get("magnitude_sha256") != file_digest(magnitude_path) or metadata.get(
+        "frequency_sha256"
+    ) != file_digest(freq_path):
+        raise ValueError(
+            "Spectrum payload changed; regenerate the spectrum and metadata"
+        )
+    cfg = source_config or SourceConfig()
+    detector_config = (detector_config or DetectorConfig()).with_source(cfg)
     signal_magnitude = np.load(magnitude_path)
     freq = np.load(freq_path)
     return calculate_snr_from_arrays(
@@ -120,13 +137,32 @@ def calculate_snr(
     )
 
 
-def save_snr_json(snr_year: float, output_path: str | Path) -> None:
+def save_snr_json(
+    snr_year: float,
+    output_path: str | Path,
+    *,
+    source_config=None,
+    detector_config=None,
+    noise_config=None,
+) -> None:
     """Persist a small machine-readable SNR summary for run directories."""
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        json.dumps({"snr_year": snr_year}, indent=2),
+        json.dumps(
+            {
+                "snr_year": snr_year,
+                **model_metadata(source_config),
+                "detector_config": asdict(
+                    detector_config
+                    or DetectorConfig().with_source(source_config or SourceConfig())
+                ),
+                "noise_config": asdict(noise_config or NoiseConfig()),
+                "interpretation": "conditional ideal free-mass response / strain-noise calibration proxy",
+            },
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
@@ -151,6 +187,18 @@ def calculate_snr_from_phasor(
     active_noise = noise_config or NoiseConfig()
     active_detector = detector_config or DetectorConfig()
 
+    if (
+        not np.isfinite(gw_frequency_hz)
+        or gw_frequency_hz <= 0
+        or not np.isfinite(phasor)
+    ):
+        raise ValueError("Require a finite phasor and positive finite frequency")
+    if (
+        not active_noise.min_frequency_hz
+        <= gw_frequency_hz
+        <= active_noise.max_frequency_hz
+    ):
+        raise ValueError("Signal frequency is outside the configured SNR band")
     freq = np.array([gw_frequency_hz], dtype=float)
     noise_psd = get_noise_psd(
         freq,

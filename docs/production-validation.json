@@ -1,0 +1,152 @@
+{
+  "model_version": "conserved-quadrupole-free-michelson-v1",
+  "phasor_convention": "peak; Re[H exp(-i Omega t)]; rotor offset is time delay",
+  "source_config": {
+    "num": 2,
+    "H": 2.0,
+    "D": 5.0,
+    "d": 1.0,
+    "s": 1.5,
+    "R": 6000.0,
+    "rho": 1750.0,
+    "G": 6.674e-11,
+    "c": 299800000.0,
+    "omega": 1884.9555921538758,
+    "L": 4000.0
+  },
+  "integration_settings": {
+    "initial_order": 48,
+    "max_order": 768,
+    "relative_tolerance": 1e-09
+  },
+  "sampling": {
+    "duration_s": 0.01,
+    "sample_rate_hz": 120000.0
+  },
+  "detector": {
+    "testmass": 200.0,
+    "length": 4000.0,
+    "length_SR": 55.0,
+    "phi_SR": 1.5013512078821931,
+    "resonance_frequency_hz": 600.0,
+    "hbar": 1.05457e-34,
+    "wavelength": 1.064e-06,
+    "c": 299800000.0,
+    "power": 125.0,
+    "T_PRM": 0.03,
+    "T_ITM": 0.014,
+    "T_ETM": 5e-06,
+    "T_SRM": 1e-05,
+    "loss_mirror_ppm": 40.0,
+    "loss_BS_ppm": 500.0
+  },
+  "noise": {
+    "model": "detuned_signal_recycling",
+    "squeeze_db": 10.0,
+    "min_frequency_hz": 1.0,
+    "max_frequency_hz": 5000.0
+  },
+  "interpretation": "ideal free-mass response; conditional strain-noise calibration",
+  "benchmarks": [
+    {
+      "angles_rad": [
+        0.6074123620484425,
+        0.7914472879881271,
+        0.3594716358447116,
+        0.7941001629975755
+      ],
+      "response": {
+        "real": -1.921731355235767e-32,
+        "imag": -2.333517910850954e-33,
+        "amplitude": 1.9358472202368965e-32,
+        "phase_rad": -3.020756342128099
+      },
+      "harmonic_response": {
+        "real": -1.9217313552357642e-32,
+        "imag": -2.3335179108509515e-33,
+        "amplitude": 1.9358472202368937e-32,
+        "phase_rad": -3.020756342128099
+      },
+      "dual_response_relative_error": 1.419207205193707e-15,
+      "quadrature_order": 96,
+      "refinement_absolute_error": 1.4075523094967133e-46,
+      "integration_scale": 2.8326581939741033e-32
+    },
+    {
+      "angles_rad": [
+        1.5707963267948966,
+        1.5707963267948966,
+        0.0,
+        0.0
+      ],
+      "response": {
+        "real": -2.022409124405414e-30,
+        "imag": -1.222483701668022e-31,
+        "amplitude": 2.0261005232926404e-30,
+        "phase_rad": -3.0812192094908184
+      },
+      "harmonic_response": {
+        "real": -2.0224091244054237e-30,
+        "imag": -1.222483701668027e-31,
+        "amplitude": 2.0261005232926506e-30,
+        "phase_rad": -3.0812192094908184
+      },
+      "dual_response_relative_error": 4.847739610147369e-15,
+      "quadrature_order": 96,
+      "refinement_absolute_error": 3.4020092957101263e-44,
+      "integration_scale": 2.046746400240938e-30
+    }
+  ],
+  "small_arrays": [
+    {
+      "num_sources": 1,
+      "response": {
+        "real": -2.020934994790017e-30,
+        "imag": -1.4542145613105568e-31,
+        "amplitude": 2.026160322647298e-30,
+        "phase_rad": -3.069758952059489
+      },
+      "generation_and_sum_seconds": 0.02818916700198315,
+      "snr_phasor": 1.2226133556708447,
+      "snr_fft": 1.2226133556708445,
+      "generation_strategy": "chunk_anchor",
+      "approximation_chunk_size": 10
+    },
+    {
+      "num_sources": 10,
+      "response": {
+        "real": -2.020812539683587e-29,
+        "imag": -1.4541264456614504e-30,
+        "amplitude": 2.0260375509210459e-29,
+        "phase_rad": -3.069758952059489
+      },
+      "generation_and_sum_seconds": 0.033498500000860076,
+      "snr_phasor": 12.225392735014639,
+      "snr_fft": 12.225392735014639,
+      "generation_strategy": "chunk_anchor",
+      "approximation_chunk_size": 10
+    },
+    {
+      "num_sources": 100,
+      "response": {
+        "real": -2.0212203651962283e-28,
+        "imag": -1.4544199067576682e-29,
+        "amplitude": 2.0264464309069965e-28,
+        "phase_rad": -3.069758952059489
+      },
+      "generation_and_sum_seconds": 0.24982866699792794,
+      "snr_phasor": 122.27859973791858,
+      "snr_fft": 122.27859973791858,
+      "generation_strategy": "chunk_anchor",
+      "approximation_chunk_size": 10
+    }
+  ],
+  "verification": {
+    "test_command": "python -m pytest -q",
+    "tests_passed": 76,
+    "environment": "ghe (Python 3.13)",
+    "static_check": "ruff check ghe scripts tests main.py --select F821,F811",
+    "diff_check": "git diff --check",
+    "additional_smoke_run": "scripts/armLengthScaling.py: 2000 m and 4000 m, 600 Hz"
+  }
+}

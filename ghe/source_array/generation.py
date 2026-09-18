@@ -26,9 +26,19 @@ from typing import Iterator
 
 import numpy as np
 
+from ghe.artifacts import model_metadata
 from ghe.config import SourceConfig
-from ghe.geometry import cartesian_to_spherical, spherical_to_cartesian, spherical_unit_vector
-from ghe.optimization import BestGeometry, scaled_spherical_function, scipy_gradient_descent, solve_best_geometry
+from ghe.geometry import (
+    cartesian_to_spherical,
+    spherical_to_cartesian,
+    spherical_unit_vector,
+)
+from ghe.optimization import (
+    BestGeometry,
+    scaled_spherical_function,
+    scipy_gradient_descent,
+    solve_best_geometry,
+)
 from ghe.paths import SOURCE_ARRAY_DISTRIBUTION_FILE, SOURCE_ARRAY_NPZ_FILE
 
 from .io import write_csv_rows, write_source_array_npz_file
@@ -78,11 +88,18 @@ class ArrayContext:
         """Return run metadata written alongside NPZ source-array artifacts."""
 
         return {
+            **model_metadata(self.config),
             "num_sources": self.num_sources,
             "spacing": self.spacing,
             "layout": self.layout,
             "source_config": asdict(self.config),
             "reference_geometry": asdict(self.reference_geometry),
+            "array_center_direction": self.n_src_center_vec.tolist(),
+            "reference_rotor_angles": [
+                self.reference_rotor_theta,
+                self.reference_rotor_phi,
+            ],
+            "reference_cosine_phase": self.reference_signal_phase,
             "generation_strategy": generation_strategy_name(
                 self.optimize_each_source,
                 self.chunk_center_approximation,
@@ -107,7 +124,9 @@ def _git_commit() -> str | None:
     return result.stdout.strip() or None
 
 
-def generation_strategy_name(optimize_each_source: bool, chunk_center_approximation: bool) -> str:
+def generation_strategy_name(
+    optimize_each_source: bool, chunk_center_approximation: bool
+) -> str:
     """Map generation flags to the strategy names used in docs and metadata."""
 
     if chunk_center_approximation:
@@ -127,6 +146,7 @@ def build_array_context(
     chunk_center_approximation: bool = False,
     approximation_chunk_size: int = DEFAULT_APPROXIMATION_CHUNK_SIZE,
     config: SourceConfig | None = None,
+    reference_geometry: BestGeometry | None = None,
 ) -> ArrayContext:
     """
     Build the fixed context needed before emitting source rows.
@@ -139,13 +159,19 @@ def build_array_context(
     """
 
     active_config = config or SourceConfig()
+    if (theta_array is None) != (phi_array is None):
+        raise ValueError("Supply both array-center angles together")
     if num_sources < 1:
         raise ValueError("num_sources must be positive.")
     if approximation_chunk_size < 1:
         raise ValueError("approximation_chunk_size must be positive.")
 
     spacing = (active_config.D * 3 / 2) if spacing is None else float(spacing)
-    reference_geometry = solve_best_geometry(recompute=recompute_best_position)
+    if not np.isfinite(spacing) or spacing <= 0:
+        raise ValueError("Source spacing must be finite and positive")
+    reference_geometry = reference_geometry or solve_best_geometry(
+        recompute=recompute_best_position, config=active_config
+    )
 
     if theta_array is None or phi_array is None:
         # Default center direction: reuse the optimized single-source pointing.
@@ -154,7 +180,9 @@ def build_array_context(
     else:
         n_src_center_vec = spherical_to_cartesian(theta_array, phi_array)
         if n_src_center_vec.ndim != 1:
-            raise ValueError("theta_array/phi_array must be scalars for the center direction.")
+            raise ValueError(
+                "theta_array/phi_array must be scalars for the center direction."
+            )
         n_src_center_vec = np.asarray(n_src_center_vec, dtype=float).reshape(3)
         n_src_center_vec = n_src_center_vec / np.linalg.norm(n_src_center_vec)
 
@@ -181,7 +209,9 @@ def build_array_context(
         # array-center sky direction.  Only the rotor angles move here; the source
         # direction is fixed by the array placement.
         _, _, reference_rotor_theta, reference_rotor_phi = scipy_gradient_descent(
-            scaled_spherical_function,
+            lambda ts, ps, tr, pr: scaled_spherical_function(
+                ts, ps, tr, pr, config=active_config
+            ),
             theta_center,
             phi_center,
             reference_geometry.theta_rot,
@@ -224,7 +254,9 @@ def build_chunk(context: ArrayContext, start: int, stop: int) -> np.ndarray:
     derives phase compensation, and packs everything into ``SOURCE_ARRAY_DTYPE``.
     """
 
-    indices, positions = positions_for_index_range(start, stop, context.layout, context.spacing)
+    indices, positions = positions_for_index_range(
+        start, stop, context.layout, context.spacing
+    )
 
     # Source coordinates are in the array frame.  The detector vertex is fixed in
     # that frame, so every off-center source has a slightly different distance and
@@ -239,10 +271,9 @@ def build_chunk(context: ArrayContext, start: int, stop: int) -> np.ndarray:
     theta_src, phi_src = cartesian_to_spherical(n_det_to_src)
 
     if context.chunk_center_approximation:
-        theta_rot, phi_rot, gw_phase_offset = approximate_chunk_center_parameters(
+        theta_rot, phi_rot = approximate_chunk_center_parameters(
             context,
             indices,
-            distances,
             u_src_to_detector,
         )
     elif context.optimize_each_source:
@@ -255,6 +286,7 @@ def build_chunk(context: ArrayContext, start: int, stop: int) -> np.ndarray:
                 context,
                 float(theta_src[i]),
                 float(phi_src[i]),
+                float(distances[i]),
             )
             theta_rot_list.append(theta_rot_i)
             phi_rot_list.append(phi_rot_i)
@@ -270,20 +302,19 @@ def build_chunk(context: ArrayContext, start: int, stop: int) -> np.ndarray:
     distance_offset = distances - context.config.R
     propagation_compensation = distance_offset / context.config.c
 
-    if not context.chunk_center_approximation:
-        # Recover the detector-response phase directly. This captures near-field
-        # effects that a simple distance/c phase approximation can miss.
-        signal_phases = np.empty(len(indices), dtype=float)
-        for i in range(len(indices)):
-            _, signal_phases[i] = get_signal_amplitude_and_phase(
-                float(theta_src[i]),
-                float(phi_src[i]),
-                float(theta_rot[i]),
-                float(phi_rot[i]),
-                float(distances[i]),
-                config=context.config,
-            )
-        gw_phase_offset = wrap_phase(signal_phases - context.reference_signal_phase)
+    # A distance/c correction misses orientation- and detector-dependent
+    # near-zone phase. All strategies therefore evaluate each complete response.
+    signal_phases = np.empty(len(indices), dtype=float)
+    for i in range(len(indices)):
+        _, signal_phases[i] = get_signal_amplitude_and_phase(
+            float(theta_src[i]),
+            float(phi_src[i]),
+            float(theta_rot[i]),
+            float(phi_rot[i]),
+            float(distances[i]),
+            config=context.config,
+        )
+    gw_phase_offset = wrap_phase(signal_phases - context.reference_signal_phase)
 
     # Mechanical rotor phase is half the emitted GW phase because the quadrupole
     # radiation oscillates at twice the rotor frequency.
@@ -306,7 +337,9 @@ def build_chunk(context: ArrayContext, start: int, stop: int) -> np.ndarray:
     return chunk
 
 
-def iter_source_chunks(context: ArrayContext, chunk_size: int = 100_000) -> Iterator[np.ndarray]:
+def iter_source_chunks(
+    context: ArrayContext, chunk_size: int = 100_000
+) -> Iterator[np.ndarray]:
     """Yield source-array rows in chunks suitable for streaming to disk."""
 
     if chunk_size < 1:
@@ -326,12 +359,13 @@ def construct_source_array(
     chunk_center_approximation: bool = False,
     approximation_chunk_size: int = DEFAULT_APPROXIMATION_CHUNK_SIZE,
     chunk_size: int = 100_000,
+    config: SourceConfig | None = None,
 ) -> np.ndarray:
     """
     Build a complete source array in memory.
 
     This is convenient for tests and small analyses.  For production-scale arrays
-    near the project goal, use the streaming CSV/NPZ writers instead.
+    near the project goal, use the streaming CSV writer instead.
     """
 
     if num > 2_000_000:
@@ -349,6 +383,7 @@ def construct_source_array(
         optimize_each_source=optimize_each_source,
         chunk_center_approximation=chunk_center_approximation,
         approximation_chunk_size=approximation_chunk_size,
+        config=config,
     )
     chunks = [chunk for chunk in iter_source_chunks(context, chunk_size=chunk_size)]
     return np.concatenate(chunks) if chunks else np.empty(0, dtype=SOURCE_ARRAY_DTYPE)
@@ -365,6 +400,7 @@ def write_source_array_csv(
     chunk_center_approximation: bool = False,
     approximation_chunk_size: int = DEFAULT_APPROXIMATION_CHUNK_SIZE,
     chunk_size: int = 100_000,
+    config: SourceConfig | None = None,
 ) -> ArrayContext:
     """
     Stream source-array rows to the legacy CSV format.
@@ -382,8 +418,13 @@ def write_source_array_csv(
         optimize_each_source=optimize_each_source,
         chunk_center_approximation=chunk_center_approximation,
         approximation_chunk_size=approximation_chunk_size,
+        config=config,
     )
-    write_csv_rows(output_path, iter_source_chunks(context, chunk_size=chunk_size))
+    write_csv_rows(
+        output_path,
+        iter_source_chunks(context, chunk_size=chunk_size),
+        metadata=context.metadata(),
+    )
     return context
 
 
@@ -398,6 +439,7 @@ def write_source_array_npz(
     chunk_center_approximation: bool = False,
     approximation_chunk_size: int = DEFAULT_APPROXIMATION_CHUNK_SIZE,
     chunk_size: int = 100_000,
+    config: SourceConfig | None = None,
 ) -> ArrayContext:
     """
     Write a structured NPZ source-array artifact plus metadata.
@@ -416,13 +458,17 @@ def write_source_array_npz(
         optimize_each_source=optimize_each_source,
         chunk_center_approximation=chunk_center_approximation,
         approximation_chunk_size=approximation_chunk_size,
+        config=config,
     )
 
     out_path = Path(output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if num_sources <= 1_000_000:
         chunks = [chunk for chunk in iter_source_chunks(context, chunk_size=chunk_size)]
-        source_array = np.concatenate(chunks) if chunks else np.empty(0, dtype=SOURCE_ARRAY_DTYPE)
+        source_array = (
+            np.concatenate(chunks) if chunks else np.empty(0, dtype=SOURCE_ARRAY_DTYPE)
+        )
     else:
         memmap_path = out_path.with_suffix(".mmap.npy")
         try:
@@ -457,7 +503,9 @@ def format_vector(vector: np.ndarray) -> str:
     return ", ".join(f"{component:.6f}" for component in vector)
 
 
-def summary_lines(context: ArrayContext, preview_rows: np.ndarray | None = None) -> list[str]:
+def summary_lines(
+    context: ArrayContext, preview_rows: np.ndarray | None = None
+) -> list[str]:
     """Build the human-readable source-array summary printed by the CLI wrapper."""
 
     theta_center, phi_center = cartesian_to_spherical(context.n_src_center_vec)

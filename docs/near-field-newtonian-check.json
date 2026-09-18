@@ -1,0 +1,768 @@
+{
+  "definition": "h_N = -[(g_x(L,0,0)-g_x(0))-(g_y(0,L,0)-g_y(0))]/(omega_GW^2 L)",
+  "phasor_convention": "peak complex amplitude; real signal = Re[phasor exp(-i omega_GW t)]; omega_GW=2 omega_rot",
+  "units": {
+    "strain": "dimensionless",
+    "acceleration": "m/s^2",
+    "quadrupole": "kg m^2"
+  },
+  "assumptions": [
+    "Newtonian instantaneous force and free-mass endpoint response; no relativistic propagation or optical transfer",
+    "vertex at origin, arms along +x and +y, with one shared freely moving vertex reference",
+    "uniform axisymmetric rotor cylinder contributes only static gravity; holes carry the oscillatory density",
+    "paper baseline fixes L=4000 m and explicit R=6000 m; other source properties use live YAML",
+    "live scenario uses current SourceConfig L and R; the numerical geometry is recorded in each case",
+    "rotor material stresses and environmental forces are outside this Newtonian validation"
+  ],
+  "analytic_method": "Q=m_h s^2 R[[1,i,0],[i,-1,0],[0,0,0]]R^T; g_Q=3G Qr/r^5-(15G/2)(r.Q.r)r/r^7",
+  "direct_method": "Gauss-Legendre radius/axial plus periodic azimuthal mass quadrature; g=-G sum(m r/r^3); 2/N sum(g exp(2i spin_phase))",
+  "precision": "Decimal 50 digits for force evaluation and DC subtraction; float64 geometry, quadrature, trigonometry and final Fourier sum",
+  "convergence_mode": "default",
+  "cached_geometry_origin": "/Users/wutong/Research/Gravitational Hertz Experiment/gravitational-Hertz-experiment/data/bestPosition.json",
+  "cases": [
+    {
+      "scenario": "paper_baseline",
+      "geometry": "cached_legacy_geometry",
+      "source_config": {
+        "num": 2,
+        "H": 2.0,
+        "D": 5.0,
+        "d": 1.0,
+        "s": 1.5,
+        "R": 6000.0,
+        "rho": 1750.0,
+        "G": 6.674e-11,
+        "c": 299800000.0,
+        "omega": 1884.9555921538758,
+        "L": 4000.0
+      },
+      "applied_arm_length_m": 4000.0,
+      "applied_source_vertex_distance_m": 6000.0,
+      "source_position_m": [
+        2406.8292485198667,
+        2435.7091228092017,
+        4926.915265917745
+      ],
+      "angles_rad": {
+        "theta_src": 0.6073687357818952,
+        "phi_src": 0.7913618811202969,
+        "theta_rot": 0.35941888331121224,
+        "phi_rot": 0.7939744998975095
+      },
+      "source_to_vertex_xend_yend_distances_m": [
+        6000.000000000001,
+        5722.356683381513,
+        5702.133549604603
+      ],
+      "hole_signed_mass_kg": -2748.893571891069,
+      "quadrupole_peak_phasor_kg_m2": {
+        "real": [
+          [
+            5808.985755956323,
+            -382.53056621715666,
+            -1427.582908785033
+          ],
+          [
+            -382.5305662171567,
+            -5745.481183705235,
+            1640.2992276618495
+          ],
+          [
+            -1427.582908785033,
+            1640.2992276618495,
+            -63.504572251089634
+          ]
+        ],
+        "imag": [
+          [
+            0.0,
+            5789.796886882061,
+            -1551.4155204521496
+          ],
+          [
+            5789.796886882061,
+            -762.5338998810167,
+            -1320.7040860285178
+          ],
+          [
+            -1551.4155204521496,
+            -1320.7040860285178,
+            762.5338998810167
+          ]
+        ]
+      },
+      "quadrupole_acceleration_phasors_vertex_xend_yend_m_s2": {
+        "real": [
+          [
+            -1.589915824256243e-22,
+            1.7180936287965553e-22,
+            -1.4720179045969208e-23
+          ],
+          [
+            3.878044656774076e-22,
+            4.392315331062112e-22,
+            3.4404677350404546e-22
+          ],
+          [
+            -4.855003807381037e-22,
+            -3.837078905578227e-22,
+            -2.7104744797801133e-22
+          ]
+        ],
+        "imag": [
+          [
+            -1.087273688684432e-22,
+            -8.517647894037622e-23,
+            2.0008875262741627e-22
+          ],
+          [
+            -5.877127178048302e-23,
+            3.415788768590711e-22,
+            -5.682770441946481e-22
+          ],
+          [
+            2.879998427789931e-22,
+            -1.1299899816087247e-22,
+            -6.153181001971595e-22
+          ]
+        ]
+      },
+      "quadrupole_differential_acceleration_phasor_m_s2": {
+        "real": 1.10231330154051e-21,
+        "imag": 7.777861630845642e-23,
+        "amplitude": 1.1050539027160609e-21,
+        "phase_rad": 0.07044269835508836
+      },
+      "quadrupole_strain_peak_phasor": {
+        "real": -1.9390223690412793e-32,
+        "imag": -1.3681634490340352e-33,
+        "amplitude": 1.943843218954446e-32,
+        "phase_rad": -3.071149955234705
+      },
+      "direct_integral_comparisons": [
+        {
+          "density_model": "point_holes",
+          "phase_samples_per_spin_period": 64,
+          "quadrature_orders_radial_azimuthal_axial": null,
+          "number_of_mass_points": 2,
+          "strain_peak_phasor": {
+            "real": -1.939022223391246e-32,
+            "imag": -1.368163348176775e-33,
+            "amplitude": 1.9438430729557555e-32,
+            "phase_rad": -3.071149955136556
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": -7.510826445489153e-08,
+            "imag": 9.814852693470712e-11,
+            "amplitude": 7.510832858318218e-08,
+            "phase_rad": 3.1402858936509213
+          }
+        },
+        {
+          "density_model": "finite_cylindrical_holes",
+          "phase_samples_per_spin_period": 32,
+          "quadrature_orders_radial_azimuthal_axial": [
+            3,
+            8,
+            3
+          ],
+          "number_of_mass_points": 144,
+          "strain_peak_phasor": {
+            "real": -1.9390223285829356e-32,
+            "imag": -1.3681634210181293e-33,
+            "amplitude": 1.943843178399253e-32,
+            "phase_rad": -3.0711499552074413
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": -2.0863407394595355e-08,
+            "imag": 2.7263511368309702e-11,
+            "amplitude": 2.0863425208050287e-08,
+            "phase_rad": 3.1402858921709105
+          },
+          "relative_change_from_previous_cylinder_setting": null
+        },
+        {
+          "density_model": "finite_cylindrical_holes",
+          "phase_samples_per_spin_period": 64,
+          "quadrature_orders_radial_azimuthal_axial": [
+            4,
+            12,
+            4
+          ],
+          "number_of_mass_points": 384,
+          "strain_peak_phasor": {
+            "real": -1.9390223285829356e-32,
+            "imag": -1.3681634210181297e-33,
+            "amplitude": 1.943843178399253e-32,
+            "phase_rad": -3.0711499552074413
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": -2.0863407393356595e-08,
+            "imag": 2.726352892453112e-11,
+            "amplitude": 2.0863425206834473e-08,
+            "phase_rad": 3.1402858913293508
+          },
+          "relative_change_from_previous_cylinder_setting": 1.7599870539635322e-17
+        }
+      ]
+    },
+    {
+      "scenario": "paper_baseline",
+      "geometry": "source_plus_y_rotor_axis_plus_z",
+      "source_config": {
+        "num": 2,
+        "H": 2.0,
+        "D": 5.0,
+        "d": 1.0,
+        "s": 1.5,
+        "R": 6000.0,
+        "rho": 1750.0,
+        "G": 6.674e-11,
+        "c": 299800000.0,
+        "omega": 1884.9555921538758,
+        "L": 4000.0
+      },
+      "applied_arm_length_m": 4000.0,
+      "applied_source_vertex_distance_m": 6000.0,
+      "source_position_m": [
+        3.6739403974420595e-13,
+        6000.0,
+        3.6739403974420595e-13
+      ],
+      "angles_rad": {
+        "theta_src": 1.5707963267948966,
+        "phi_src": 1.5707963267948966,
+        "theta_rot": 0.0,
+        "phi_rot": 0.0
+      },
+      "source_to_vertex_xend_yend_distances_m": [
+        6000.0,
+        7211.102550927979,
+        2000.0
+      ],
+      "hole_signed_mass_kg": -2748.893571891069,
+      "quadrupole_peak_phasor_kg_m2": {
+        "real": [
+          [
+            6185.010536754905,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -6185.010536754905,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "imag": [
+          [
+            0.0,
+            6185.010536754905,
+            0.0
+          ],
+          [
+            6185.010536754905,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      "quadrupole_acceleration_phasors_vertex_xend_yend_m_s2": {
+        "real": [
+          [
+            -2.0478200920737696e-37,
+            -1.4332902889688277e-21,
+            -1.4627286371955498e-37
+          ],
+          [
+            4.983062808601832e-22,
+            1.4656067084123072e-23,
+            -2.24356320533252e-38
+          ],
+          [
+            -4.97620282373926e-35,
+            -1.1609651340647502e-19,
+            -3.5544305883851853e-35
+          ]
+        ],
+        "imag": [
+          [
+            -9.555268593125516e-22,
+            2.34036581951288e-37,
+            1.7913259435627002e-53
+          ],
+          [
+            2.0518493917772235e-22,
+            -6.253255289225828e-22,
+            -5.384551692798047e-38
+          ],
+          [
+            -7.73976756043167e-20,
+            5.687088941416296e-35,
+            1.305876612857208e-50
+          ]
+        ]
+      },
+      "quadrupole_differential_acceleration_phasor_m_s2": {
+        "real": 1.1516152939836637e-19,
+        "imag": 1.1607117984902174e-21,
+        "amplitude": 1.1516737865059687e-19,
+        "phase_rad": 0.01007864781683831
+      },
+      "quadrupole_strain_peak_phasor": {
+        "real": -2.025746956372285e-30,
+        "imag": -2.0417481474072133e-32,
+        "amplitude": 2.0258498475457947e-30,
+        "phase_rad": -3.131514005772955
+      },
+      "direct_integral_comparisons": [
+        {
+          "density_model": "point_holes",
+          "phase_samples_per_spin_period": 64,
+          "quadrature_orders_radial_azimuthal_axial": null,
+          "number_of_mass_points": 2,
+          "strain_peak_phasor": {
+            "real": -2.0257477531993762e-30,
+            "imag": -2.041748205122431e-32,
+            "amplitude": 2.025850644338233e-30,
+            "phase_rad": -3.1315140094522396
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": 3.9331268252005484e-07,
+            "imag": -3.6792859089348377e-09,
+            "amplitude": 3.9332989128201424e-07,
+            "phase_rad": -0.00935433499839126
+          }
+        },
+        {
+          "density_model": "finite_cylindrical_holes",
+          "phase_samples_per_spin_period": 32,
+          "quadrature_orders_radial_azimuthal_axial": [
+            3,
+            8,
+            3
+          ],
+          "number_of_mass_points": 144,
+          "strain_peak_phasor": {
+            "real": -2.025747177712755e-30,
+            "imag": -2.041748163439216e-32,
+            "amplitude": 2.025850068876639e-30,
+            "phase_rad": -3.1315140067949767
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": 1.0925333103066933e-07,
+            "imag": -1.0220219411541394e-09,
+            "amplitude": 1.092581112327374e-07,
+            "phase_rad": -0.009354333832684414
+          },
+          "relative_change_from_previous_cylinder_setting": null
+        },
+        {
+          "density_model": "finite_cylindrical_holes",
+          "phase_samples_per_spin_period": 64,
+          "quadrature_orders_radial_azimuthal_axial": [
+            4,
+            12,
+            4
+          ],
+          "number_of_mass_points": 384,
+          "strain_peak_phasor": {
+            "real": -2.0257471777127552e-30,
+            "imag": -2.041748163439217e-32,
+            "amplitude": 2.0258500688766394e-30,
+            "phase_rad": -3.1315140067949767
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": 1.0925333120364225e-07,
+            "imag": -1.0220219374932808e-09,
+            "amplitude": 1.0925811140566849e-07,
+            "phase_rad": -0.009354333784370186
+          },
+          "relative_change_from_previous_cylinder_setting": 1.7301163430886826e-16
+        }
+      ]
+    },
+    {
+      "scenario": "live_yaml",
+      "geometry": "cached_legacy_geometry",
+      "source_config": {
+        "num": 2,
+        "H": 2.0,
+        "D": 5.0,
+        "d": 1.0,
+        "s": 1.5,
+        "R": 5992.5,
+        "rho": 1750.0,
+        "G": 6.674e-11,
+        "c": 299800000.0,
+        "omega": 1884.9555921538758,
+        "L": 3995.0
+      },
+      "applied_arm_length_m": 3995.0,
+      "applied_source_vertex_distance_m": 5992.5,
+      "source_position_m": [
+        2403.820711959217,
+        2432.6644864056902,
+        4920.756621835348
+      ],
+      "angles_rad": {
+        "theta_src": 0.6073687357818952,
+        "phi_src": 0.7913618811202969,
+        "theta_rot": 0.35941888331121224,
+        "phi_rot": 0.7939744998975095
+      },
+      "source_to_vertex_xend_yend_distances_m": [
+        5992.5,
+        5715.203737527286,
+        5695.005882667597
+      ],
+      "hole_signed_mass_kg": -2748.893571891069,
+      "quadrupole_peak_phasor_kg_m2": {
+        "real": [
+          [
+            5808.985755956323,
+            -382.53056621715666,
+            -1427.582908785033
+          ],
+          [
+            -382.5305662171567,
+            -5745.481183705235,
+            1640.2992276618495
+          ],
+          [
+            -1427.582908785033,
+            1640.2992276618495,
+            -63.504572251089634
+          ]
+        ],
+        "imag": [
+          [
+            0.0,
+            5789.796886882061,
+            -1551.4155204521496
+          ],
+          [
+            5789.796886882061,
+            -762.5338998810167,
+            -1320.7040860285178
+          ],
+          [
+            -1551.4155204521496,
+            -1320.7040860285178,
+            762.5338998810167
+          ]
+        ]
+      },
+      "quadrupole_acceleration_phasors_vertex_xend_yend_m_s2": {
+        "real": [
+          [
+            -1.597890308054496e-22,
+            1.7267110094136258e-22,
+            -1.4794010520263982e-23
+          ],
+          [
+            3.8974956263238677e-22,
+            4.414345709595362e-22,
+            3.457723965711861e-22
+          ],
+          [
+            -4.87935487591671e-22,
+            -3.8563244046784453e-22,
+            -2.724069309452744e-22
+          ]
+        ],
+        "imag": [
+          [
+            -1.0927270883439617e-22,
+            -8.560369555206071e-23,
+            2.01092330610412e-22
+          ],
+          [
+            -5.906604874129184e-23,
+            3.4329212178548854e-22,
+            -5.711273309914151e-22
+          ],
+          [
+            2.89444353265084e-22,
+            -1.1356576318472148e-22,
+            -6.184043291320087e-22
+          ]
+        ]
+      },
+      "quadrupole_differential_acceleration_phasor_m_s2": {
+        "real": 1.1078421348470436e-21,
+        "imag": 7.81687277257651e-23,
+        "amplitude": 1.110596481957655e-21,
+        "phase_rad": 0.07044269835508826
+      },
+      "quadrupole_strain_peak_phasor": {
+        "real": -1.951186837567043e-32,
+        "imag": -1.376746630682476e-33,
+        "amplitude": 1.956037931111213e-32,
+        "phase_rad": -3.071149955234705
+      },
+      "direct_integral_comparisons": [
+        {
+          "density_model": "point_holes",
+          "phase_samples_per_spin_period": 64,
+          "quadrature_orders_radial_azimuthal_axial": null,
+          "number_of_mass_points": 2,
+          "strain_peak_phasor": {
+            "real": -1.9511866906361752e-32,
+            "imag": -1.376746528938286e-33,
+            "amplitude": 1.956037783828622e-32,
+            "phase_rad": -3.0711499551363106
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": -7.529638815081553e-08,
+            "imag": 9.839440634739932e-11,
+            "amplitude": 7.529645243978945e-08,
+            "phase_rad": 3.140285893029865
+          }
+        },
+        {
+          "density_model": "finite_cylindrical_holes",
+          "phase_samples_per_spin_period": 32,
+          "quadrature_orders_radial_azimuthal_axial": [
+            3,
+            8,
+            3
+          ],
+          "number_of_mass_points": 144,
+          "strain_peak_phasor": {
+            "real": -1.9511867967529116e-32,
+            "imag": -1.3767466024202007e-33,
+            "amplitude": 1.9560378901993806e-32,
+            "phase_rad": -3.0711499552073733
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": -2.091566415142499e-08,
+            "imag": 2.733182310703573e-11,
+            "amplitude": 2.0915682009529565e-08,
+            "phase_rad": 3.1402858909954228
+          },
+          "relative_change_from_previous_cylinder_setting": null
+        },
+        {
+          "density_model": "finite_cylindrical_holes",
+          "phase_samples_per_spin_period": 64,
+          "quadrature_orders_radial_azimuthal_axial": [
+            4,
+            12,
+            4
+          ],
+          "number_of_mass_points": 384,
+          "strain_peak_phasor": {
+            "real": -1.951186796752912e-32,
+            "imag": -1.3767466024202014e-33,
+            "amplitude": 1.9560378901993808e-32,
+            "phase_rad": -3.0711499552073733
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": -2.0915664009388767e-08,
+            "imag": 2.7331848152298845e-11,
+            "amplitude": 2.0915681867526192e-08,
+            "phase_rad": 3.14028588978911
+          },
+          "relative_change_from_previous_cylinder_setting": 1.4422743876493165e-16
+        }
+      ]
+    },
+    {
+      "scenario": "live_yaml",
+      "geometry": "source_plus_y_rotor_axis_plus_z",
+      "source_config": {
+        "num": 2,
+        "H": 2.0,
+        "D": 5.0,
+        "d": 1.0,
+        "s": 1.5,
+        "R": 5992.5,
+        "rho": 1750.0,
+        "G": 6.674e-11,
+        "c": 299800000.0,
+        "omega": 1884.9555921538758,
+        "L": 3995.0
+      },
+      "applied_arm_length_m": 3995.0,
+      "applied_source_vertex_distance_m": 5992.5,
+      "source_position_m": [
+        3.669347971945257e-13,
+        5992.5,
+        3.669347971945257e-13
+      ],
+      "angles_rad": {
+        "theta_src": 1.5707963267948966,
+        "phi_src": 1.5707963267948966,
+        "theta_rot": 0.0,
+        "phi_rot": 0.0
+      },
+      "source_to_vertex_xend_yend_distances_m": [
+        5992.5,
+        7202.088672739319,
+        1997.5
+      ],
+      "hole_signed_mass_kg": -2748.893571891069,
+      "quadrupole_peak_phasor_kg_m2": {
+        "real": [
+          [
+            6185.010536754905,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -6185.010536754905,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "imag": [
+          [
+            0.0,
+            6185.010536754905,
+            0.0
+          ],
+          [
+            6185.010536754905,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      "quadrupole_acceleration_phasors_vertex_xend_yend_m_s2": {
+        "real": [
+          [
+            -2.0580912698913847e-37,
+            -1.4404791916850576e-21,
+            -1.4700651927795603e-37
+          ],
+          [
+            5.008056178078769e-22,
+            1.472957699434928e-23,
+            -2.2548161648655483e-38
+          ],
+          [
+            -5.001161785836064e-35,
+            -1.166788145264897e-19,
+            -3.572258418454332e-35
+          ]
+        ],
+        "imag": [
+          [
+            -9.603194611233717e-22,
+            2.3521043084472962e-37,
+            1.8003106328754253e-53
+          ],
+          [
+            2.0621407792089026e-22,
+            -6.284619517589042e-22,
+            -5.411558795677314e-38
+          ],
+          [
+            -7.778587635099311e-20,
+            5.715613469526931e-35,
+            1.312426451366185e-50
+          ]
+        ]
+      },
+      "quadrupole_differential_acceleration_phasor_m_s2": {
+        "real": 1.157391409526125e-19,
+        "imag": 1.166533539044205e-21,
+        "amplitude": 1.157450195427277e-19,
+        "phase_rad": 0.010078647816838307
+      },
+      "quadrupole_strain_peak_phasor": {
+        "real": -2.0384554921196756e-30,
+        "imag": -2.0545570667230588e-32,
+        "amplitude": 2.038559028781583e-30,
+        "phase_rad": -3.131514005772955
+      },
+      "direct_integral_comparisons": [
+        {
+          "density_model": "point_holes",
+          "phase_samples_per_spin_period": 64,
+          "quadrature_orders_radial_azimuthal_axial": null,
+          "number_of_mass_points": 2,
+          "strain_peak_phasor": {
+            "real": -2.0384562959539966e-30,
+            "imag": -2.0545571249458162e-32,
+            "amplitude": 2.038559832580946e-30,
+            "phase_rad": -3.131514009461455
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": 3.9429781114433894e-07,
+            "imag": -3.6885014160701765e-09,
+            "amplitude": 3.9431506300915403e-07,
+            "phase_rad": -0.009354335036860142
+          }
+        },
+        {
+          "density_model": "finite_cylindrical_holes",
+          "phase_samples_per_spin_period": 32,
+          "quadrature_orders_radial_azimuthal_axial": [
+            3,
+            8,
+            3
+          ],
+          "number_of_mass_points": 144,
+          "strain_peak_phasor": {
+            "real": -2.0384557154065936e-30,
+            "imag": -2.0545570828960443e-32,
+            "amplitude": 2.0385592520587905e-30,
+            "phase_rad": -3.1315140067975364
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": 1.0952697678540287e-07,
+            "imag": -1.0245817946528038e-09,
+            "amplitude": 1.0953176896044414e-07,
+            "phase_rad": -0.009354333879164513
+          },
+          "relative_change_from_previous_cylinder_setting": null
+        },
+        {
+          "density_model": "finite_cylindrical_holes",
+          "phase_samples_per_spin_period": 64,
+          "quadrature_orders_radial_azimuthal_axial": [
+            4,
+            12,
+            4
+          ],
+          "number_of_mass_points": 384,
+          "strain_peak_phasor": {
+            "real": -2.0384557154065943e-30,
+            "imag": -2.0545570828960443e-32,
+            "amplitude": 2.038559252058791e-30,
+            "phase_rad": -3.1315140067975364
+          },
+          "relative_complex_difference_from_quadrupole": {
+            "real": 1.095269771290837e-07,
+            "imag": -1.024581798116759e-09,
+            "amplitude": 1.0953176930414233e-07,
+            "phase_rad": -0.009354333881437327
+          },
+          "relative_change_from_previous_cylinder_setting": 3.4369824249886563e-16
+        }
+      ]
+    }
+  ]
+}

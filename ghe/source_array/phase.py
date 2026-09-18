@@ -3,18 +3,16 @@ Phase extraction and phase conversion helpers for coherent source arrays.
 
 The source-array goal is constructive interference at the detector.  Distances
 alone are not always enough in the near field, so this module recovers each
-source's actual detector-response phase by sampling the metric response.
+source's actual detector-response phase from the complete complex response.
 """
 
 from __future__ import annotations
 
-import math
 
 import numpy as np
 
 from ghe.config import SourceConfig
-from ghe.geometry import rotation_body_to_detector, spherical_unit_vector
-from ghe.metric import _calculate_metric_response_prepared
+from ghe.metric import calculate_response_phasor
 
 
 def get_signal_amplitude_and_phase(
@@ -29,38 +27,18 @@ def get_signal_amplitude_and_phase(
     """
     Recover detector-response amplitude and phase for a single source.
 
-    The quadrupole radiation is dominated by ``2 * omega``. Sampling at ``t=0`` and
-    one quarter of that GW period recovers the sinusoid phase without changing the
-    physical model.
+    Returns peak dimensionless amplitude and cosine phase at ``2 * omega``.
+    Propagation and detector integration are already included in this phase.
     """
 
-    active_config = config or SourceConfig()
-    if distance != active_config.R:
-        from dataclasses import replace
-
-        active_config = replace(active_config, R=float(distance))
-
-    n_src_to_det = spherical_unit_vector(theta_src, phi_src)
-    R_body_to_det = rotation_body_to_detector(theta_rot, phi_rot)
-
-    t0 = 0.0
-    quarter_period = np.pi / (4.0 * active_config.omega)
-
-    signal_t0 = _calculate_metric_response_prepared(
-        t0, n_src_to_det, R_body_to_det, active_config,
+    phasor = calculate_response_phasor(
+        theta_src, phi_src, theta_rot, phi_rot, R=distance, config=config
     )
-    signal_t90 = _calculate_metric_response_prepared(
-        quarter_period, n_src_to_det, R_body_to_det, active_config,
-    )
-
-    amplitude = math.hypot(signal_t0, signal_t90)
-    if amplitude <= np.finfo(float).tiny:
-        return amplitude, 0.0
-
-    normalized_cos = np.clip(signal_t0 / amplitude, -1.0, 1.0)
-    normalized_sin = np.clip(-signal_t90 / amplitude, -1.0, 1.0)
-    phase = math.atan2(normalized_sin, normalized_cos)
-    return float(amplitude), float(phase)
+    amplitude = float(abs(phasor))
+    # Legacy helper returns phi in A*cos(Omega*t+phi), whereas our internal
+    # complex convention is Re[H*exp(-i*Omega*t)]. Therefore phi=-arg(H).
+    phase = 0.0 if amplitude <= np.finfo(float).tiny else -float(np.angle(phasor))
+    return amplitude, phase
 
 
 def wrap_phase(angle: np.ndarray | float) -> np.ndarray | float:
@@ -72,7 +50,9 @@ def wrap_phase(angle: np.ndarray | float) -> np.ndarray | float:
     return wrapped
 
 
-def rotor_phase_from_gw_phase(gw_phase_offset: np.ndarray | float) -> np.ndarray | float:
+def rotor_phase_from_gw_phase(
+    gw_phase_offset: np.ndarray | float,
+) -> np.ndarray | float:
     """
     Convert emitted GW phase correction to mechanical rotor phase correction.
 

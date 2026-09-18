@@ -14,16 +14,18 @@ from ghe.config import (
     MAGNITUDE_FILE,
     NoiseConfig,
     SamplingConfig,
+    SourceConfig,
 )
 from ghe.snr import calculate_snr as _calculate_snr
 from ghe.snr import calculate_snr_from_arrays as _calculate_snr_from_arrays
 from ghe.spectrum import Spectrum, calculate_spectrum, save_spectrum_arrays
-from scr.fourier import build_default_signal, plot
+from scripts.fourier import build_default_signal, plot
 
 
 def generate_current_spectrum(
     *,
     sampling_config: SamplingConfig | None = None,
+    source_config: SourceConfig | None = None,
     magnitude_path=MAGNITUDE_FILE,
     freq_path=FREQS_FILE,
     save: bool = True,
@@ -33,7 +35,7 @@ def generate_current_spectrum(
 
     active_sampling = sampling_config or SamplingConfig()
     time_axis = active_sampling.time_axis()
-    signal = build_default_signal(active_sampling)
+    signal = build_default_signal(active_sampling, source_config=source_config)
     spectrum = calculate_spectrum(signal, sampling=active_sampling)
 
     if save:
@@ -41,6 +43,7 @@ def generate_current_spectrum(
             spectrum,
             magnitude_path=magnitude_path,
             freq_path=freq_path,
+            config=source_config,
         )
     if make_plot:
         plot(
@@ -60,6 +63,7 @@ def calculate_snr(
     noise_config: NoiseConfig | None = None,
     detector_config: DetectorConfig | None = None,
     sampling_config: SamplingConfig | None = None,
+    source_config: SourceConfig | None = None,
     verbose: bool = True,
 ) -> float:
     """
@@ -75,7 +79,11 @@ def calculate_snr(
     if magnitude_path is None:
         if verbose:
             print("Regenerating the signal spectrum from current parameters ...")
-        spectrum = generate_current_spectrum(sampling_config=sampling_config)
+        kwargs = {"source_config": source_config} if source_config is not None else {}
+        spectrum = generate_current_spectrum(sampling_config=sampling_config, **kwargs)
+        detector_config = (detector_config or DetectorConfig()).with_source(
+            source_config or SourceConfig()
+        )
         snr_year = _calculate_snr_from_arrays(
             spectrum.magnitude,
             spectrum.freqs,
@@ -87,6 +95,7 @@ def calculate_snr(
         snr_year = _calculate_snr(
             magnitude_path=magnitude_path,
             freq_path=freq_path,
+            source_config=source_config,
             noise_config=noise_config,
             detector_config=detector_config,
             sampling_config=sampling_config,
@@ -103,8 +112,13 @@ def calculate_snr_from_arrays(
     noise_config: NoiseConfig | None = None,
     detector_config: DetectorConfig | None = None,
     sampling_config: SamplingConfig | None = None,
+    source_config: SourceConfig | None = None,
     verbose: bool = True,
 ) -> float:
+    if source_config is not None:
+        detector_config = (detector_config or DetectorConfig()).with_source(
+            source_config
+        )
     snr_year = _calculate_snr_from_arrays(
         signal_magnitude,
         freq,

@@ -17,7 +17,13 @@ import argparse
 import csv
 from pathlib import Path
 
-from ghe.config import DATA_DIR, SourceArrayConfig, SourceConfig
+from ghe.config import (
+    DATA_DIR,
+    SourceArrayConfig,
+    SourceConfig,
+    DetectorConfig,
+    NoiseConfig,
+)
 from ghe.signal import compute_phasor_sum
 from ghe.snr import calculate_snr_from_phasor
 from ghe.source_array.generation import build_array_context, iter_source_chunks
@@ -33,16 +39,22 @@ def parse_array_sizes(raw: str) -> list[int]:
     try:
         sizes = [int(part.strip()) for part in raw.split(",") if part.strip()]
     except ValueError as exc:
-        raise argparse.ArgumentTypeError("Array sizes must be comma-separated integers.") from exc
+        raise argparse.ArgumentTypeError(
+            "Array sizes must be comma-separated integers."
+        ) from exc
 
     if not sizes:
         raise argparse.ArgumentTypeError("At least one array size is required.")
     if any(size < 1 for size in sizes):
         raise argparse.ArgumentTypeError("Every array size must be positive.")
     if sizes[0] != 1:
-        raise argparse.ArgumentTypeError("The first array size must be 1 to define SNR_1.")
+        raise argparse.ArgumentTypeError(
+            "The first array size must be 1 to define SNR_1."
+        )
     if any(right <= left for left, right in zip(sizes, sizes[1:])):
-        raise argparse.ArgumentTypeError("Array sizes must be unique and strictly increasing.")
+        raise argparse.ArgumentTypeError(
+            "Array sizes must be unique and strictly increasing."
+        )
     return sizes
 
 
@@ -75,7 +87,11 @@ def calculate_array_snr(
             chunk_size=generation_chunk_size,
         )
 
-    snr = calculate_snr_from_phasor(phasor, source_config.gw_frequency_hz)
+    snr = calculate_snr_from_phasor(
+        phasor,
+        source_config.gw_frequency_hz,
+        detector_config=DetectorConfig().with_source(source_config),
+    )
     return snr, abs(phasor)
 
 
@@ -217,6 +233,21 @@ def main() -> None:
         spacing=args.spacing,
     )
     write_results(rows, args.output)
+    from dataclasses import asdict
+    from ghe.artifacts import model_metadata, write_metadata
+
+    write_metadata(
+        args.output,
+        {
+            **model_metadata(),
+            "generation_strategy": args.strategy,
+            "approximation_chunk_size": args.approximation_chunk_size,
+            "spacing_m": args.spacing,
+            "detector_config": asdict(DetectorConfig().with_source(SourceConfig())),
+            "noise_config": asdict(NoiseConfig()),
+            "interpretation": "conditional ideal strain-noise proxy",
+        },
+    )
     print(f"Saved high-precision sweep table to {args.output}")
 
 

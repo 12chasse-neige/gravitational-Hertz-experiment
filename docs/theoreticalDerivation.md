@@ -1,3 +1,7 @@
+> **Historical derivation:** The radiative-only detector calculation below has
+> been superseded in production by the conserved finite-distance response. See
+> [the current derivation](near-field-analysis.md) and [review guide](production-integration-review.md).
+
 # Gravitational Hertz Experiment
 
 ## The GW Radiation under TT gauge 

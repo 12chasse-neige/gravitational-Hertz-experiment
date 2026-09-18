@@ -13,7 +13,14 @@ def test_lattice_dimensions_are_cube_like_for_perfect_cube() -> None:
 
 
 def test_source_array_chunk_schema_smoke() -> None:
-    context = build_array_context(num_sources=1, optimize_each_source=False)
+    from ghe.optimization import BestGeometry, get_signal_amplitude
+
+    angles = (0.6, 0.8, 0.4, 0.8)
+    context = build_array_context(
+        num_sources=1,
+        optimize_each_source=False,
+        reference_geometry=BestGeometry(*angles, get_signal_amplitude(*angles)),
+    )
     chunk = build_chunk(context, 0, 1)
     assert chunk.dtype == SOURCE_ARRAY_DTYPE
     assert chunk["source_id"][0] == 0
@@ -24,7 +31,9 @@ def test_npz_round_trip(tmp_path) -> None:
     array = np.zeros(2, dtype=SOURCE_ARRAY_DTYPE)
     array["source_id"] = [0, 1]
     output_path = tmp_path / "source_array.npz"
-    write_source_array_npz_file(output_path, array, metadata={"generation_strategy": "test"})
+    write_source_array_npz_file(
+        output_path, array, metadata={"generation_strategy": "test"}
+    )
 
     loaded, metadata = read_source_array_npz(output_path)
     assert loaded.dtype == SOURCE_ARRAY_DTYPE

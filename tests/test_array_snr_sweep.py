@@ -4,7 +4,7 @@ import csv
 
 import pytest
 
-from scr.sweepArraySNR import parse_array_sizes, sweep_array_snr, write_results
+from scripts.sweepArraySNR import parse_array_sizes, sweep_array_snr, write_results
 
 
 def test_parse_array_sizes_requires_one_as_reference() -> None:
@@ -19,7 +19,7 @@ def test_sweep_uses_full_precision_single_source_reference(monkeypatch) -> None:
     def fake_calculate(num_sources, **kwargs):
         return numerical_values[num_sources], float(num_sources)
 
-    monkeypatch.setattr("scr.sweepArraySNR.calculate_array_snr", fake_calculate)
+    monkeypatch.setattr("scripts.sweepArraySNR.calculate_array_snr", fake_calculate)
     rows = sweep_array_snr(
         [1, 10],
         strategy="rigid",
@@ -29,7 +29,9 @@ def test_sweep_uses_full_precision_single_source_reference(monkeypatch) -> None:
     )
 
     assert rows[1]["ideal_snr_year"] == 10 * numerical_values[1]
-    expected = (numerical_values[10] - 10 * numerical_values[1]) / (10 * numerical_values[1])
+    expected = (numerical_values[10] - 10 * numerical_values[1]) / (
+        10 * numerical_values[1]
+    )
     assert rows[1]["relative_deviation"] == expected
 
 

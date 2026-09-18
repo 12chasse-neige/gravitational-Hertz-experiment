@@ -4,7 +4,8 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
+from dataclasses import replace
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -12,41 +13,12 @@ if __package__ in (None, ""):
 import numpy as np
 
 from ghe.config import (
-    BEST_POSITION_FILE,
     PAPER_FIGURES_DIR,
     ExperimentConfig,
     build_time_axis,
 )
-from ghe.geometry import rotation_body_to_detector, spherical_unit_vector
-from ghe.metric import (
-    calculate_delta_t,
-    calculate_delta_t_prime,
-    calculate_metric_response as _calculate_metric_response,
-    calculate_whole_tensor,
-    get_hole_coordinate,
-    get_metric_tensor_body_frame,
-    project_to_tt_gauge_dynamic,
-    second_derivative_of_tensor,
-)
-from ghe.optimization import FALLBACK_BEST_POSITION, parse_best_position_text
-
-_BEST_POSITION_CACHE: Optional[Tuple[float, float, float, float]] = None
-
-
-def _get_best_position_defaults() -> Tuple[float, float, float, float]:
-    global _BEST_POSITION_CACHE
-    if _BEST_POSITION_CACHE is not None:
-        return _BEST_POSITION_CACHE
-    if BEST_POSITION_FILE.is_file():
-        try:
-            parsed = parse_best_position_text(BEST_POSITION_FILE.read_text(encoding="utf-8"))
-            if parsed is not None:
-                _BEST_POSITION_CACHE = parsed
-                return _BEST_POSITION_CACHE
-        except OSError:
-            pass
-    _BEST_POSITION_CACHE = FALLBACK_BEST_POSITION
-    return _BEST_POSITION_CACHE
+from ghe.metric import calculate_metric_response as _calculate_metric_response
+from ghe.metric import calculate_response_phasor
 
 
 def calculate_metric_response(
@@ -58,7 +30,16 @@ def calculate_metric_response(
     R: Optional[float] = None,
     config: Optional[ExperimentConfig] = None,
 ) -> float:
-    d1, d2, d3, d4 = _get_best_position_defaults()
+    # Default geometry must be optimized at the caller's actual distance too.
+    config = config or ExperimentConfig()
+    if R is not None:
+        config = replace(config, R=float(R))
+    if any(angle is None for angle in (theta_src, phi_src, theta_rot, phi_rot)):
+        from ghe.optimization import solve_best_geometry
+
+        d1, d2, d3, d4 = solve_best_geometry(config=config).angles
+    else:
+        d1, d2, d3, d4 = theta_src, phi_src, theta_rot, phi_rot
     return _calculate_metric_response(
         t,
         d1 if theta_src is None else theta_src,
@@ -124,8 +105,12 @@ def parse_arguments() -> argparse.Namespace:
             "default: cached best position)"
         ),
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="show detailed output")
-    parser.add_argument("-o", "--output", type=str, default=None, help="path for the output file")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="show detailed output"
+    )
+    parser.add_argument(
+        "-o", "--output", type=str, default=None, help="path for the output file"
+    )
     parser.add_argument(
         "-R",
         "--distance",
@@ -147,12 +132,20 @@ def plot_single_source_signal(
     time_s = np.asarray(time_s, dtype=float)
     response = np.asarray(response, dtype=float)
     if time_s.ndim != 1 or response.ndim != 1 or time_s.shape != response.shape:
-        raise ValueError("time_s and response must be one-dimensional arrays of equal length")
-    if time_s.size < 2 or not np.all(np.isfinite(time_s)) or not np.all(np.isfinite(response)):
+        raise ValueError(
+            "time_s and response must be one-dimensional arrays of equal length"
+        )
+    if (
+        time_s.size < 2
+        or not np.all(np.isfinite(time_s))
+        or not np.all(np.isfinite(response))
+    ):
         raise ValueError("time_s and response must contain at least two finite samples")
 
     max_response = float(np.max(np.abs(response)))
-    response_exponent = 0 if max_response == 0.0 else int(np.floor(np.log10(max_response)))
+    response_exponent = (
+        0 if max_response == 0.0 else int(np.floor(np.log10(max_response)))
+    )
     scaled_response = response / 10.0**response_exponent
 
     matplotlib_cache_dir = Path(os.getenv("TMPDIR", "/tmp")) / "ghe-matplotlib-cache"
@@ -208,11 +201,18 @@ def signal_test(
     output_path: Path = PAPER_FIGURES_DIR / "Signal.png",
 ) -> None:
     t = build_time_axis()
-    config = ExperimentConfig() if arm_length_m is None else ExperimentConfig(L=float(arm_length_m))
-    h_values = np.array(
-        [calculate_metric_response(ti, config=config) for ti in t],
-        dtype=float,
+    config = (
+        ExperimentConfig()
+        if arm_length_m is None
+        else ExperimentConfig(L=float(arm_length_m))
     )
+    from ghe.optimization import solve_best_geometry
+    from ghe.signal import synthesize_signal
+
+    H = calculate_response_phasor(
+        *solve_best_geometry(config=config).angles, config=config
+    )
+    h_values = synthesize_signal(H, t, config)
     plot_single_source_signal(t, h_values, output_path=output_path)
 
 

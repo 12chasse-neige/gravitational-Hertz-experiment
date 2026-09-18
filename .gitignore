@@ -29,7 +29,15 @@ Thumbs.db
 .vscode/
 
 # Local reference material (large or personal copies)
-docs/
+docs/*
+!docs/current-workflows.md
+!docs/theoreticalDerivation.md
+!docs/near-field-analysis.md
+!docs/near-field-analysis-results.json
+!docs/near-field-newtonian-check.json
+!docs/production-integration-review.md
+!docs/production-validation.json
+runs/
 img/
 data/
 

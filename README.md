@@ -1,122 +1,81 @@
 # Gravitational Hertz Experiment
 
-This project models a gravitational-wave source based on a rotating hole array and evaluates its detectability with a LIGO-like interferometer. It computes the metric perturbation from a rotating mass distribution, finds the best source/rotor geometry, transforms the signal into frequency space, and estimates the signal-to-noise ratio (SNR) using quantum-noise models.
+Calculate the oscillating gravitational response of a two-hole rotor and coherent
+source arrays in an ideal equal-arm, free-mass Michelson interferometer.
+The production model retains all radial terms of the conserved mass quadrupole,
+source-to-field retardation, and finite light-travel time along both arms.
 
-## Features
-- Reusable `ghe/` package for geometry, metric response, optimization, source arrays, signal generation, spectra, noise, and SNR
-- Compatibility scripts for the original command-line workflows
-- Physics model for a rotating quadrupole source and detector response
-- Optimization of best source sky location and rotor axis
-- Fourier analysis of generated gravitational-wave signals
-- SNR calculation using quantum noise PSD and saved signal spectra
-- Detector noise modeling including squeezed-light quantum noise
-- Parameter sweeps over test mass and arm length to build SNR tables
-- CSV and `.npz` source-array storage
+The nearby-source response is mainly a driven Newtonian tidal interaction. Its
+amplitude is not evidence of isolating emitted gravitational radiation. Reported
+SNR uses the existing strain-referred noise models as a conditional calibration
+proxy; suspension, feedback, cavity response, and source disturbances are outside
+this calculation.
 
-## Module Map
-- `scr/metricCalculate.py` -> `ghe.metric`, `ghe.geometry`
-- `scr/singleSourceNearField.py` -> `ghe.near_field`
-- `scr/bestPosition.py` -> `ghe.optimization`
-- `scr/sourceArray.py` -> `ghe.source_array.*`
-- `scr/fourier.py` -> `ghe.spectrum`
-- `scr/quantumNoise.py` -> `ghe.noise`
-- `scr/noiseAnalysis.py` -> `ghe.snr`
-- `main.py` -> `ghe.signal`, `ghe.spectrum`, `ghe.snr`
+## Start here
 
-The scripts are now thin compatibility wrappers. New reusable code should go in `ghe/`.
+- [Review guide](docs/production-integration-review.md): code ownership, equations,
+  phase signs, compatibility changes, and validation evidence.
+- [Field and response derivation](docs/near-field-analysis.md): equations used by
+  the production kernel; its original diagnostic results are historical.
+- [Current workflows](docs/current-workflows.md): small runs and large-run commands.
+- [Validation record](docs/production-validation.json): fixed physics benchmarks
+  and measured 1-, 10-, and 100-source examples.
 
-## Configuration
+## Structure
 
-Project defaults are stored in two structured YAML files:
+| Layer | Responsibility |
+| --- | --- |
+| `ghe/finite_distance.py` | Rotor STF moment, physical metric, acceleration, tidal curvature |
+| `ghe/detector_response.py` | Converged arm integration and independent harmonic response |
+| `ghe/metric.py` | Public geometry-to-phasor and time-domain response APIs |
+| `ghe/optimization.py`, `ghe/source_array/` | Geometry search, placement, orientation, phase delays, array storage |
+| `ghe/signal.py` | Coherent phasor summation and time-series synthesis |
+| `ghe/spectrum.py`, `ghe/noise.py`, `ghe/snr.py` | FFT, retained noise models, conditional SNR |
+| `ghe/artifacts.py` | Model provenance and saved-data compatibility |
+| `scripts/`, `main.py` | Command-line entry points |
+| `tests/support/` | Independent Newtonian and time-domain reference calculations |
 
-- `configs/detector.yaml`: GWINC-compatible detector parameter names and units
-- `configs/source.yaml`: source physics, constants, sampling, noise, and source-array defaults
-
-`ghe/config.py` reads both files when a process starts and uses their values as
-the dataclass defaults. Existing environment variables remain optional overrides,
-and explicit Python arguments or CLI flags take precedence for one run. For
-example, these commands do not modify the YAML files:
+## Environment and verification
 
 ```bash
-python scr/quantumNoise.py --length-sr 70 --t-srm 0.2
-python scr/quantumNoise.py --detector-config /path/to/gwinc/ifo.yaml
-python scr/sourceArray.py --num-sources 1000 --chunk-size 100 --spacing 8
-python scr/armLengthScaling.py --frequency 800 --squeeze-db 8
+conda create -n ghe python=3.13
+conda activate ghe
+python -m pip install -r requirements.txt pytest
+python -m pytest -q
+python scripts/validateResponse.py --output-dir runs/validation
 ```
 
-## Installation
+## Small end-to-end run
 
-1. Create a Python environment (conda or venv recommended):
-	 ```bash
-	 conda create -n gravitational-Hertz-experiment python=3.10
-	 conda activate gravitational-Hertz-experiment
-	 # or use venv:
-	 # python -m venv .venv && source .venv/bin/activate
-	 ```
-2. Install dependencies:
-	 ```bash
-	 pip install -r requirements.txt
-	 ```
+```bash
+python main.py --renew-source-array --source-array-num-sources 100 \
+  --source-array-chunk-size 10 --source-array-format csv \
+  --run-dir runs/example
+python main.py --source-array-input runs/example/source_array.csv \
+  --use-mono-approx --run-dir runs/example-mono
+```
 
-## Usage
+Both paths use the same complete response phasor. The first synthesizes a signal
+and FFT; the second evaluates monochromatic SNR directly. For a bin-aligned tone,
+they agree. `--use-mono-approx` is retained as a historical flag name; the source
+model itself is monochromatic.
 
-- Run the main analysis:
-	```bash
-	python main.py
-	```
-- Optional workflows:
-	- Optimize geometry:
-		```bash
-		python scr/bestPosition.py
-		```
-	- Generate FFT data and plots only:
-		```bash
-		python scr/fourier.py
-		```
-	- Directly integrate the single-rotor near-field metric tensor at the detector vertex:
-		```bash
-		python scr/singleSourceNearField.py
-		```
-	- Regenerate the signal spectrum from current parameters and compute SNR:
-		```bash
-		python scr/noiseAnalysis.py
-		```
-	- Compare gwinc, previous, and detuned signal-recycling noise curves:
-		```bash
-		python scr/quantumNoise.py
-		```
-	- Sweep arm length and test mass:
-		```bash
-		python scr/runSNR.py --masses "20,39.6,80" --lengths "[1000,4000,1000]"
-		```
-	- Plot SNR results:
-		```bash
-		python scr/plotSNRCurve.py --input data/snr_year_table.csv --output "paper/figures/SNR (3D).png"
-		```
-	- Preview a source array:
-		```bash
-		python scr/sourceArray.py --summary-only --num-sources 1000
-		```
-	- Generate binary source-array data:
-		```bash
-		python scr/sourceArray.py --num-sources 1000 --format npz
-		```
+## Configuration and saved data
 
-## Output Files
-- `data/freqs.npy`, `data/magnitude.npy`: single-source FFT results
-- `data/total_freqs.npy`, `data/total_magnitude.npy`: source-array FFT results
-- `data/bestPosition.txt`, `data/bestPosition.json`: optimized geometry
-- `data/single_source_metric.json`: direct single-rotor metric tensor at the detector vertex
-- `data/source_array_distribution.csv`: compatibility source-array table
-- `data/source_array_distribution.npz`: preferred binary source-array table for generated small and medium arrays
-- `data/snr_year_table.csv`: SNR sweep results
-- `paper/figures/`: Generated plots, including the figures embedded in the manuscript
-- `runs/<name>/`: optional reproducible run output created with `python main.py --run-dir runs/<name>`
+`configs/source.yaml` and `configs/detector.yaml` supply defaults. Explicit Python
+arguments and supported environment/CLI overrides remain available. Source
+`R=None` derives distance from the configured arm-length ratio; explicit distances
+are preserved. To rescale arm length and derived placement together, use
+`replace(config, L=new_length, R=None)`.
 
-## Notes
-- The repository uses `numpy`, `matplotlib`, `scipy`, and `gwinc`.
-- The main analysis depends on the source distribution and best-position data files in `data/`.
-- Source-array write chunk size controls how many rows are generated before writing CSV output.
-- Generation strategy is `exact` when every source rotor is optimized, `rigid` when the reference rotor axis is transported without per-source optimization, and `chunk_anchor` when one exact anchor is optimized per approximation group.
-- `--approximation-chunk-size` controls the number of nearby sources represented by one chunk-anchor optimization.
-- For more details, see `docs/theoreticalDerivation.md` and `docs/current-workflows.md`.
+Old best-geometry caches are recomputed. Old arrays and spectra must be regenerated:
+their orientations and phases belong to the removed radiative-only model.
+CSV and paired NPY outputs have adjacent `.metadata.json` sidecars; NPZ and JSON
+outputs embed model identity. Keep payloads and metadata together.
+
+Use streaming CSV for very large arrays. Compressed NPZ is convenient for small
+and medium arrays and is loaded as a whole. Chunk-anchor generation approximates
+rotor orientation, while **every source phase uses the complete response**.
+Under identical, aligned source responses and fixed noise, amplitude and SNR scale
+as `N`; squared SNR scales as `N²`. Real spatial arrays need not have identical
+source amplitudes.

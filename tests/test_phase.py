@@ -14,17 +14,15 @@ from ghe.phase import (
 def resonance_condition(phi: float, f_res: float, config: DetectorConfig) -> float:
     gamma = config.T_ITM * config.c / (4 * config.length)
     omega = 2 * np.pi * f_res
-    phi_fp = np.arctan(omega / gamma) + np.mod(
-        omega * config.length_SR / config.c,
-        2 * np.pi,
-    )
+    # The retained ideal noise model uses the arm-cavity pole phase only.
+    # A separate SR propagation term is absent from both noise and its solver.
+    phi_fp = np.arctan(omega / gamma)
     rho = np.sqrt(1.0 - config.T_SRM)
     kappa = get_coupling_constant(omega, config=config)
 
-    return (
-        (1 + rho**2) * (np.cos(2 * phi) + 0.5 * kappa * np.sin(2 * phi))
-        - 2 * rho * np.cos(2 * phi_fp)
-    )
+    return (1 + rho**2) * (
+        np.cos(2 * phi) + 0.5 * kappa * np.sin(2 * phi)
+    ) - 2 * rho * np.cos(2 * phi_fp)
 
 
 @pytest.mark.parametrize("f_res", [20.0, 100.0, 600.0, 1000.0, 3000.0])
@@ -43,7 +41,8 @@ def test_source_distance_and_detector_length_track_source_arm_length() -> None:
     detector = DetectorConfig(length=4000.0)
     run_config = RunConfig(source=source, detector=detector)
 
-    assert source.R == 1.5 * source.L
+    assert source.R == 123.0
+    assert SourceConfig(L=2400.0).R == 1.5 * 2400.0
     assert run_config.detector.length == source.L
     assert run_config.detector.L == source.L
 
@@ -70,4 +69,3 @@ def test_run_config_recomputes_detector_phase_for_source_frequency() -> None:
 
     assert run_config.detector.resonance_frequency_hz == source.gw_frequency_hz
     assert np.isclose(run_config.detector.phi_SR, expected)
-

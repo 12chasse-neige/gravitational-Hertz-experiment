@@ -9,12 +9,14 @@ expect this convention, so changes here should be treated as physics-visible.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 
 import numpy as np
 from scipy.fft import rfft, rfftfreq
 
 from .config import SamplingConfig
+from .artifacts import model_metadata, write_metadata, file_digest
 
 
 @dataclass(frozen=True)
@@ -26,7 +28,11 @@ class Spectrum:
     freqs: np.ndarray
 
 
-def fourier(signal: np.ndarray, sampling_rate: float | None = None, sampling: SamplingConfig | None = None):
+def fourier(
+    signal: np.ndarray,
+    sampling_rate: float | None = None,
+    sampling: SamplingConfig | None = None,
+):
     """
     Compute the positive-frequency real FFT.
 
@@ -56,7 +62,9 @@ def calculate_spectrum(
 ) -> Spectrum:
     """Return a structured ``Spectrum`` object from a time-domain signal."""
 
-    input_signal, magnitude, freqs = fourier(signal, sampling_rate=sampling_rate, sampling=sampling)
+    input_signal, magnitude, freqs = fourier(
+        signal, sampling_rate=sampling_rate, sampling=sampling
+    )
     return Spectrum(signal=input_signal, magnitude=magnitude, freqs=freqs)
 
 
@@ -64,6 +72,8 @@ def save_spectrum_arrays(
     spectrum: Spectrum,
     magnitude_path: str | Path,
     freq_path: str | Path,
+    *,
+    config=None,
 ) -> None:
     """Save legacy ``.npy`` arrays consumed by existing scripts."""
 
@@ -73,9 +83,22 @@ def save_spectrum_arrays(
     freq_output.parent.mkdir(parents=True, exist_ok=True)
     np.save(magnitude_output, spectrum.magnitude)
     np.save(freq_output, spectrum.freqs)
+    metadata = {
+        **model_metadata(config),
+        "kind": "spectrum",
+        "fft_convention": "abs(rfft(signal)*dt); DC omitted",
+        "magnitude_sha256": file_digest(magnitude_output),
+        "frequency_sha256": file_digest(freq_output),
+    }
+    # Both files carry the same pair identity: mixing two individually current
+    # files from different runs is not a valid spectrum.
+    write_metadata(magnitude_output, metadata)
+    write_metadata(freq_output, metadata)
 
 
-def save_spectrum_npz(spectrum: Spectrum, output_path: str | Path) -> None:
+def save_spectrum_npz(
+    spectrum: Spectrum, output_path: str | Path, *, config=None
+) -> None:
     """Save signal, magnitude, and frequency arrays in one reproducible artifact."""
 
     output_path = Path(output_path)
@@ -85,4 +108,5 @@ def save_spectrum_npz(spectrum: Spectrum, output_path: str | Path) -> None:
         signal=spectrum.signal,
         magnitude=spectrum.magnitude,
         freqs=spectrum.freqs,
+        metadata=np.array(json.dumps(model_metadata(config))),
     )

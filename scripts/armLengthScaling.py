@@ -22,20 +22,18 @@ from ghe.config import (
     SamplingConfig,
     SourceConfig,
 )
-from ghe.metric import calculate_metric_response
+from ghe.metric import calculate_response_phasor
+from ghe.signal import synthesize_signal
 from ghe.noise import get_detuned_signal_recycling_noise_psd
 from ghe.optimization import (
     BestGeometry,
     FALLBACK_BEST_POSITION,
     get_signal_amplitude,
     load_best_geometry,
-    scaled_spherical_function,
-    scipy_gradient_descent,
-    spherical_function,
 )
 from ghe.spectrum import calculate_spectrum
-from scr.noiseAnalysis import calculate_snr_from_arrays
-from scr.runSNR import parse_float_list
+from scripts.noiseAnalysis import calculate_snr_from_arrays
+from scripts.runSNR import parse_float_list
 
 
 @dataclass(frozen=True)
@@ -65,7 +63,9 @@ def build_source_config(arm_length_m: float, gw_frequency_hz: float) -> SourceCo
     )
 
 
-def build_detector_config(arm_length_m: float, gw_frequency_hz: float) -> DetectorConfig:
+def build_detector_config(
+    arm_length_m: float, gw_frequency_hz: float
+) -> DetectorConfig:
     return DetectorConfig(
         length=float(arm_length_m),
         resonance_frequency_hz=float(gw_frequency_hz),
@@ -82,29 +82,9 @@ def geometry_from_angles(
 
 
 def optimize_geometry(config: SourceConfig) -> BestGeometry:
-    def objective(
-        theta_src: float,
-        phi_src: float,
-        theta_rot: float,
-        phi_rot: float,
-    ) -> float:
-        return scaled_spherical_function(
-            theta_src,
-            phi_src,
-            theta_rot,
-            phi_rot,
-            config=config,
-        )
+    from ghe.optimization import optimize_best_geometry
 
-    theta_src, phi_src, theta_rot, phi_rot = scipy_gradient_descent(
-        objective,
-        1.0,
-        0.0,
-        1.0,
-        0.0,
-    )
-    amplitude = spherical_function(theta_src, phi_src, theta_rot, phi_rot, config=config)
-    return BestGeometry(theta_src, phi_src, theta_rot, phi_rot, signal_amplitude=amplitude)
+    return optimize_best_geometry(config=config)
 
 
 def build_single_source_spectrum(
@@ -113,17 +93,8 @@ def build_single_source_spectrum(
     sampling: SamplingConfig,
 ):
     time_axis = sampling.time_axis()
-    signal = np.array(
-        [
-            calculate_metric_response(
-                float(t),
-                *geometry.angles,
-                config=config,
-            )
-            for t in time_axis
-        ],
-        dtype=float,
-    )
+    H = calculate_response_phasor(*geometry.angles, config=config)
+    signal = synthesize_signal(H, time_axis, config)
     return calculate_spectrum(signal, sampling=sampling)
 
 
@@ -228,24 +199,25 @@ def plot_results(
     import matplotlib.pyplot as plt
     from matplotlib.ticker import FixedLocator, FuncFormatter, MaxNLocator
 
-    lengths_km = np.array([result.arm_length_m for result in results], dtype=float) / 1e3
+    lengths_km = (
+        np.array([result.arm_length_m for result in results], dtype=float) / 1e3
+    )
     asd = np.array([result.detuned_asd_per_sqrt_hz for result in results], dtype=float)
     snr = np.array([result.single_source_snr_year for result in results], dtype=float)
 
     finite_positive = (
-        np.isfinite(lengths_km)
-        & np.isfinite(snr)
-        & (lengths_km > 0)
-        & (snr > 0)
+        np.isfinite(lengths_km) & np.isfinite(snr) & (lengths_km > 0) & (snr > 0)
     )
     if np.count_nonzero(finite_positive) < 2:
-        raise ValueError("At least two finite, positive arm lengths and SNRs are required")
+        raise ValueError(
+            "At least two finite, positive arm lengths and SNRs are required"
+        )
     snr_power, snr_log_normalization = np.polyfit(
         np.log10(lengths_km[finite_positive]),
         np.log10(snr[finite_positive]),
         1,
     )
-    snr_fit = 10.0 ** snr_log_normalization * lengths_km**snr_power
+    snr_fit = 10.0**snr_log_normalization * lengths_km**snr_power
 
     paper_style = {
         "font.family": "STIXGeneral",
@@ -376,8 +348,7 @@ def parse_arguments() -> argparse.Namespace:
         type=float,
         default=source_defaults.gw_frequency_hz,
         help=(
-            "Target GW frequency in Hz. "
-            f"Default: {source_defaults.gw_frequency_hz:g}."
+            f"Target GW frequency in Hz. Default: {source_defaults.gw_frequency_hz:g}."
         ),
     )
     parser.add_argument(
@@ -451,6 +422,36 @@ def main() -> None:
         max_snr_frequency_hz=args.snr_max_frequency,
     )
     save_results_csv(results, args.csv_output)
+    from dataclasses import asdict
+    from ghe.artifacts import model_metadata, write_metadata
+
+    write_metadata(
+        args.csv_output,
+        {
+            "cases": [
+                {
+                    **model_metadata(
+                        build_source_config(row.arm_length_m, args.frequency)
+                    ),
+                    "detector_config": asdict(
+                        build_detector_config(row.arm_length_m, args.frequency)
+                    ),
+                }
+                for row in results
+            ],
+            "sampling": asdict(sampling),
+            "noise_config": asdict(
+                NoiseConfig(
+                    model="detuned_signal_recycling",
+                    squeeze_db=args.squeeze_db,
+                    min_frequency_hz=args.snr_min_frequency,
+                    max_frequency_hz=args.snr_max_frequency,
+                )
+            ),
+            "optimize_each_length": args.optimize_geometry,
+            "interpretation": "conditional ideal strain-noise proxy",
+        },
+    )
     plot_results(results, gw_frequency_hz=args.frequency, output_path=args.output)
 
     best_snr = max(results, key=lambda result: result.single_source_snr_year)
