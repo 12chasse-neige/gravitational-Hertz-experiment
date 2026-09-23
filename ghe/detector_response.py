@@ -1,10 +1,10 @@
 """Equal-arm, free-mass Michelson integration of the exterior quadrupole field.
 
 The vertex is at zero, arms point along +x/+y, and t is reception time at the
-vertex. Production integrates curvature (near-field-analysis.md eqs. 31–32).
+vertex. Production integrates curvature.
 The independent harmonic-gauge implementation below retains moving endpoints
 and light-path terms separately to verify their sum. Neither calculation is a
-suspended Fabry–Perot cavity model. Inputs use SI units and PEAK exp(-iΩt) phasors.
+suspended Fabry-Perot cavity model. Inputs use SI units and PEAK exp(-iΩt) phasors.
 """
 
 from __future__ import annotations
@@ -22,14 +22,14 @@ from .finite_distance import quadrupole_field, newtonian_acceleration
 class IntegrationSettings:
     """Numerical accuracy controls, independent of the physical approximation.
 
-    Compare successive doubled Gauss–Legendre rules, starting at 48 points per
+    Compare successive doubled Gauss-Legendre rules, starting at 48 points per
     arm. The error scale is the sum of absolute arm integrands, so a physical
     differential-response null does not cause meaningless relative errors.
     """
 
-    initial_order: int = 48
-    max_order: int = 768
-    relative_tolerance: float = 1e-9
+    initial_order: int = 96
+    max_order: int = 1536
+    relative_tolerance: float = 1e-11
 
     def __post_init__(self):
         if (

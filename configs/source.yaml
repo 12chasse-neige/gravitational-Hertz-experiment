@@ -12,6 +12,10 @@ Sampling:
 Noise:
   Model: detuned_signal_recycling
   SqueezingDB: 10.0
+  Estimation:
+    FrequencySamples: 1000             # logarithmic samples, plus exact target
+    TargetFrequency: null              # Hz; null uses rotor AngularVelocity / pi
+    GasAllowanceASD: 4.50e-27          # Hz^-1/2; independent conditional allowance
   FrequencyBand:
     Minimum: 1.0                        # Hz
     Maximum: 5000.0                     # Hz

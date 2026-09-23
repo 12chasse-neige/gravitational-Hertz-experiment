@@ -37,8 +37,8 @@ def test_dataclass_defaults_come_from_yaml_files() -> None:
     assert detector.T_ITM == detector_yaml["Optics"]["ITM"]["Transmittance"]
     assert detector.T_SRM == detector_yaml["Optics"]["SRM"]["Transmittance"]
     assert detector.length_SR == detector_yaml["Optics"]["SRM"]["CavityLength"]
-    assert detector.loss_mirror_ppm == 1.0e6 * detector_yaml["Optics"]["Loss"]
-    assert detector.loss_BS_ppm == 1.0e6 * detector_yaml["Optics"]["BSLoss"]
+    assert detector.loss_mirror_ppm == 1.0e6 * float(detector_yaml["Optics"]["Loss"])
+    assert detector.loss_BS_ppm == 1.0e6 * float(detector_yaml["Optics"]["BSLoss"])
     assert sampling.duration_s == source_yaml["Sampling"]["Duration"]
     assert noise.model == source_yaml["Noise"]["Model"]
 

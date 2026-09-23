@@ -31,6 +31,7 @@ this calculation.
 | `ghe/optimization.py`, `ghe/source_array/` | Geometry search, placement, orientation, phase delays, array storage |
 | `ghe/signal.py` | Coherent phasor summation and time-series synthesis |
 | `ghe/spectrum.py`, `ghe/noise.py`, `ghe/snr.py` | FFT, retained noise models, conditional SNR |
+| `ghe/thermal_gas.py`, `ghe/residual_gas.py` | Focused GWINC thermal/gas estimate and notebook gas comparisons |
 | `ghe/artifacts.py` | Model provenance and saved-data compatibility |
 | `scripts/`, `main.py` | Command-line entry points |
 | `tests/support/` | Independent Newtonian and time-domain reference calculations |
@@ -44,6 +45,23 @@ python -m pip install -r requirements.txt pytest
 python -m pytest -q
 python scripts/validateResponse.py --output-dir runs/validation
 ```
+
+## Thermal and residual-gas estimate
+
+After editing the YAML configurations, run:
+
+```bash
+conda activate ghe
+python scripts/estimateThermalGas.py --config configs/detector.yaml \
+  --output-dir runs/thermal-gas-hybrid
+```
+
+This writes `thermal_gas.csv`, `.json`, and `.png` in the selected output
+directory. The default detector is a CE2 silicon hybrid with GHE's signal
+recycling settings. Separate runs can use `configs/aLIGO.yaml` or
+`configs/CE2silicon.yaml` for comparison. The estimates do not change the
+analytic noise model used by existing SNR commands. See the
+[thermal/gas workflow](docs/current-workflows.md#thermal-and-residual-gas-estimates).
 
 ## Small end-to-end run
 

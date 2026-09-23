@@ -195,7 +195,7 @@ def parse_arguments() -> argparse.Namespace:
         "--run-dir",
         type=Path,
         default=None,
-        help="Optional run output directory. Writes config, signal, spectrum, and SNR artifacts there.",
+        help="Optional output directory for run artifacts. Writes config, signal, spectrum, and SNR artifacts there.",
     )
     parser.add_argument(
         "--use-mono-approx",

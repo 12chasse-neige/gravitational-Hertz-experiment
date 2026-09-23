@@ -1,7 +1,8 @@
 > **Implementation status:** The finite-distance equations in this report now
 > underpin production. Its original diagnostic workflow and implementation
-> checklist are historical; see [the integration review guide](production-integration-review.md)
-> and [current commands](current-workflows.md).
+> checklist and the 3995 m numerical defaults below are historical, preceding
+> the CE2 silicon switch. See [the integration review guide](production-integration-review.md)
+> and [current commands](current-workflows.md) for the active 40 km detector.
 
 # Finite-distance rotor gravity and the interferometer response
 
@@ -354,6 +355,11 @@ U_Q=\frac{3G}{2r^3}Q_{ij}n_in_j,
 
 Since $E_{pp}=-\partial_p g_p$, integrating (31) with $W\simeq2$ gives
 
+
+
+
+
+
 \[
 \mathsf H_N=-\frac{[\mathsf g_x(L\mathbf e_x)-\mathsf g_x(0)]
 -[\mathsf g_y(L\mathbf e_y)-\mathsf g_y(0)]}{\Omega^2L}.
@@ -389,21 +395,13 @@ The uniform cylinder's Eulerian density is time independent. Each round hole's i
 \tag{36}
 \]
 
-The rotation matrix is exactly the one in `ghe/geometry.py`; the body $x,y$ completion affects the mechanical phase convention. The old cached geometry is
-
-\[
-(\theta_s,\phi_s,\theta_{\rm rot},\phi_{\rm rot})=
-(0.6074123620484425,\ 0.7914472879881271,\ 0.3594716358447116,\ 0.7941001629975755).
-\tag{37}
-\]
-
-It was optimized for the old radiative template and is not a near-zone optimum.
+The rotation matrix is exactly the one in `ghe/geometry.py`; the body $x,y$ completion affects the mechanical phase convention.
 
 ### 8.2 Recomputed signals, rather than total metric norms
 
 All entries below are peak amplitudes. “Full” means the complete leading mass-quadrupole field, including retardation, in the ideal free-mass equal-arm observable (31). “Newtonian” means (34). The third column is an illustrative placement, not a claim of a globally optimized apparatus.
 
-| Quantity | Paper benchmark, cached angles | Live defaults, cached angles | Paper benchmark, source $+y$, rotor axis $+z$ |
+| Quantity | Paper benchmark, cached angles | Former 3995 m defaults, cached angles | Paper benchmark, source $+y$, rotor axis $+z$ |
 |---|---:|---:|---:|
 | $L$, m | 4000 | 3995 | 4000 |
 | Source-to-vertex $R$, m | 6000 | 5992.5 | 6000 |
@@ -556,7 +554,7 @@ The present full-versus-Newtonian comparison and $kL\simeq0.05$ make (45) with t
 
 Using the current ideal detuned model, 10 dB squeezing, the source frequency 600 Hz, and $T_{\rm yr}=365\times24\times3600$ s, the recomputed values are:
 
-| Quantity | Paper $L,R$, cached angles | Live defaults, cached angles | Paper $L,R$, arm-extension example |
+| Quantity | Paper $L,R$, cached angles | Former 3995 m defaults, cached angles | Paper $L,R$, arm-extension example |
 |---|---:|---:|---:|
 | Ideal quantum ASD, ${\rm Hz}^{-1/2}$ | $9.30653\times10^{-27}$ | $9.30659\times10^{-27}$ | $9.30653\times10^{-27}$ |
 | One-source full-response SNR/year | 0.0116812 | 0.0117545 | 1.22258 |
@@ -564,9 +562,9 @@ Using the current ideal detuned model, 10 dB squeezing, the source frequency 600
 
 The last row is an algebraic benchmark, not an array design. Integer counts would be at least 429, 426, and 5 under identical responses, fixed noise, and perfect coherence. Real placement and correlated disturbances must be evaluated source by source.
 
-The live detector configuration has $L=3995$ m, test mass 200 kg, and $T_{\rm SRM}=10^{-5}$. The paper's appendix still quotes a 4000 m/6000 m benchmark and an older SNR value, while its parameter table has partly changed. The first column above changes $L,R$ to the requested benchmark but retains the current optical and source parameters; it is not a reconstruction of every historical detector setting.
+The former detector configuration had $L=3995$ m, test mass 200 kg, and $T_{\rm SRM}=10^{-5}$. The paper's appendix still quotes a 4000 m/6000 m benchmark and an older SNR value, while its parameter table has partly changed. The first column above changes $L,R$ to the requested benchmark but retains that former optical and source setup; it is not a reconstruction of every historical detector setting.
 
-`ghe/noise.py` currently supplies a quantum-noise model with ideal frequency-dependent squeezing. It does not add a complete thermal, gas, seismic, control, or source-induced noise budget. As context, a separate live GWINC 0.6.2 evaluation of `configs/aLIGO.yaml` at 600 Hz gives a total reference ASD $3.95376\times10^{-24}\ {\rm Hz}^{-1/2}$, about 425 times larger. That reference has a 39.6 kg test mass and different optics. It is not the proposed detector's noise curve. With that reference ASD as a separate sensitivity illustration, the same two paper-geometry signal amplitudes would give only about $2.75\times10^{-5}$ and $2.88\times10^{-3}$ SNR/year.
+`ghe/noise.py` supplies a quantum-noise model with ideal frequency-dependent squeezing. It does not add a complete thermal, gas, seismic, control, or source-induced noise budget. As historical context, a separate GWINC 0.6.2 evaluation of `configs/aLIGO.yaml` at 600 Hz gave a total reference ASD $3.95376\times10^{-24}\ {\rm Hz}^{-1/2}$, about 425 times larger than the former ideal quantum proxy. That reference has a 39.6 kg test mass and different optics. It is not the CE2 hybrid detector's noise curve. With that reference ASD as a separate sensitivity illustration, the same two paper-geometry signal amplitudes would give only about $2.75\times10^{-5}$ and $2.88\times10^{-3}$ SNR/year.
 
 For the experiment itself, construct the measured/calculated total output spectrum, including cross spectra for correlated terms. Schematically, for independent contributions only,
 
@@ -612,7 +610,7 @@ The cached-geometry radiative template is about $1.2\times10^{-5}$ of the full r
 | Abstract, motivation, interpretation, and conclusions | If using the stronger signal quantified here, describe a measurement of driven gravitational interaction. Do not identify it as a demonstrated radiative GW measurement. |
 | `ghe/metric.py`, `ghe/optimization.py`, `ghe/source_array/phase.py`, `ghe/signal.py` | Introduce/select a full-response kernel and regenerate dependent caches. The existing local-TT kernel may be retained only as a clearly labeled legacy/radiative comparison. |
 | `ghe/near_field.py` | Correct the trace-reversal labeling; use element-dependent retardation if calling an integral fully retarded; enforce a conserved source including stresses. A vertex tensor alone is not an interferometer response. |
-| `ghe/config.py:SourceConfig.__post_init__` and distance callers | Stop overwriting explicit distances. Currently `SourceConfig(R=100).R` and `replace(SourceConfig(), R=100).R` both become 5992.5 m under live defaults. This breaks independent distance overrides. |
+| `ghe/config.py:SourceConfig.__post_init__` and distance callers | Historical defect: explicit distances were overwritten, and both forms became 5992.5 m under the former 3995 m defaults. The production implementation has since corrected this. |
 | Detector-noise discussion | Separate the speculative ideal quantum curve from a complete apparatus noise and calibration model. Synchronize the paper's mixed 3995/4000 m baselines. |
 
 The new diagnostic passes explicit Cartesian source coordinates, so it avoids the distance-override defect. This task adds a reviewed diagnostic and this report; it does **not** silently switch the legacy production pipeline, change its configuration semantics, regenerate its old arrays, or rewrite `paper/main.tex`. The table identifies the further production/manuscript edits needed to adopt this analysis.
@@ -622,7 +620,7 @@ The new diagnostic passes explicit Cartesian source coordinates, so it avoids th
 Added files:
 
 * `ghe/finite_distance.py`: conserved leading mass-quadrupole physical metric, coordinate acceleration, gauge-invariant tidal curvature, and two equivalent ideal Michelson calculations.
-* `scr/nearFieldResponse.py`: reproduces the paper benchmark, live configuration, arm-extension example, and a fixed-arm distance sweep. Writes complete parameters and complex results to `docs/near-field-analysis-results.json`.
+* The former `scr/nearFieldResponse.py` diagnostic reproduced the paper benchmark, the then-current 3995 m configuration, an arm-extension example, and a fixed-arm distance sweep. Its saved historical results are in `docs/near-field-analysis-results.json`.
 * `scr/verifyNearFieldNewtonian.py`: independent analytic quadrupole and direct point-hole/finite-cylinder Newtonian calculation. Writes `docs/near-field-newtonian-check.json`.
 * `tests/test_finite_distance.py`: Newtonian, vacuum, harmonic-constraint, radiation-zone, finite-arm gauge-equivalence, short-arm, and rotor-Fourier checks.
 
@@ -636,8 +634,5 @@ python -m pytest tests/test_finite_distance.py tests/test_near_field.py tests/te
 ```
 
 The direct integral offers `--quick` for one quadrature setting and `--extended` for a third. Both scripts offer output-path overrides and use the saved geometry when present; if the ignored cache is absent, they use and identify the embedded angle snapshot in (37). Source and detector parameters are read from the current configuration, and recorded with the outputs. The paper benchmark deliberately uses the source/optical parameters available on the analysis date; future configuration changes will alter numerical results.
-
-
-
 
 

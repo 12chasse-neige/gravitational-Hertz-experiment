@@ -196,7 +196,7 @@ def scipy_gradient_descent(
             x0=start,
             bounds=bounds,
             method="SLSQP",
-            options={"disp": False, "ftol": 1e-10, "eps": 1e-7, "maxiter": 500},
+            options={"disp": False, "ftol": 1e-15, "eps": 1e-9, "maxiter": 1000},
         )
         for start in starts
     ]

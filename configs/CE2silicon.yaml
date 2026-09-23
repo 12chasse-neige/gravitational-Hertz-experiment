@@ -1,9 +1,5 @@
-# GHE CE2 silicon hybrid: CE2 parameters except the signal-recycling mirror.
-# The SRM settings below retain GHE's narrowband 600 Hz design. A null
-# Tunephase is resolved using the source GW frequency before GWINC runs.
-# This is not the published CE2 sensitivity configuration.
-+inherit: CE2silicon
 # GWINC CE2 (Silicon) interferometer parameters
++inherit: CE2silicon
 #
 # References:
 # 1. Electro-Optic Handbook, Waynant & Ediger (McGraw-Hill: 1993)
@@ -367,9 +363,9 @@ Optics:
     Transmittance: 0.03
 
   SRM:
-    Transmittance: 1.0e-5      # GHE hybrid; CE2 reference uses 0.02
-    Tunephase: null            # resolve from Source.Rotor.AngularVelocity / pi
-    CavityLength: 55           # m; GHE hybrid, CE2 reference uses 20 m
+    Transmittance: 0.02
+    Tunephase: 0.0             # SEC tuning
+    CavityLength: 20           # m; ITM to SRM distance
 
   Curvature:
     ITM: 30000                 # ROC of ITM

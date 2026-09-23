@@ -2,17 +2,9 @@
 
 ## What changed
 
-The production observable is now the conserved leading mass-quadrupole response
-of an equal-arm, ideal free-mass Michelson. No production calculation applies a
-position-dependent TT projector. The source remains compact and slow-moving;
-there is no expansion in kR, kL, or L/R. Static moments are excluded from the
-oscillating signal. Suspension, feedback, optical springs, cavity calibration,
-and environmental coupling are not added by this migration.
+The production observable is now the conserved leading mass-quadrupole response of an equal-arm, ideal free-mass Michelson. No production calculation applies a position-dependent TT projector. The source remains compact and slow-moving; there is no expansion in kR, kL, or L/R. Static moments are excluded from the oscillating signal. Suspension, feedback, optical springs, cavity calibration, and environmental coupling are not added by this migration.
 
-The theoretical equations are in [near-field-analysis.md](near-field-analysis.md).
-That report predates the integration; its final implementation checklist describes
-the old state. The original [theoreticalDerivation.md](theoreticalDerivation.md)
-is retained as historical background, not the production response specification.
+The theoretical equations are in [near-field-analysis.md](near-field-analysis.md). That report predates the integration; its final implementation checklist describes the old state. The original [theoreticalDerivation.md](theoreticalDerivation.md) is retained as historical background, not the production response specification.
 
 ## Suggested line-by-line review order
 
@@ -29,23 +21,13 @@ is retained as historical background, not the production response specification.
 | `ghe/artifacts.py` | Physics and numerical identity gates | Missing, stale, mixed and modified artifact tests |
 | `ghe/validation.py`, `scripts/` | No duplicate field equations; recorded inputs; isolated run outputs | Actual CLI tests and saved validation record |
 
-Detailed comments explain physical steps and sign choices beside the relevant
-operations. Array operations use explicit geometry axes and intermediate radial
-quantities rather than collapsing the derivation into opaque expressions.
+Detailed comments explain physical steps and sign choices beside the relevant operations. Array operations use explicit geometry axes and intermediate radial quantities rather than collapsing the derivation into opaque expressions.
 
 ## Contracts and deliberate compatibility changes
 
 ### Public response
 
-`calculate_response_phasor(theta_src, phi_src, theta_rot, phi_rot, *, config, R,
-settings)` returns a **peak**, dimensionless complex response. Angles are in
-radians; source angles point from vertex to COM and rotor angles along body +z.
-`calculate_metric_response(t, ...)` returns `Re[H exp(-iΩt)]` at reception time in
-seconds, with Ω=2ω. Compute H once for a time series.
-
-`quadrupole_field` accepts positions with shape `(..., 3)` and one STF moment
-with shape `(3, 3)`. Metric, acceleration, and tidal arrays retain their leading
-batch dimensions. They have units 1, m/s², and s⁻² respectively.
+`calculate_response_phasor(theta_src, phi_src, theta_rot, phi_rot, *, config, R, settings)` returns a peak, dimensionless complex response. Angles are in radians; source angles point from vertex to COM and rotor angles along body +z. `calculate_metric_response(t, ...)` returns `Re[H exp(-iΩt)]` at reception time in seconds, with Ω=2ω. Compute H once for a time series. `quadrupole_field` accepts positions with shape `(..., 3)` and one STF moment with shape `(3, 3)`. Metric, acceleration, and tidal arrays retain their leading batch dimensions. They have units 1, m/s², and s⁻² respectively.
 
 ### Phase alignment
 

@@ -29,6 +29,7 @@ Thumbs.db
 .vscode/
 
 # Local reference material (large or personal copies)
+outputs/
 docs/*
 !docs/current-workflows.md
 !docs/theoreticalDerivation.md
