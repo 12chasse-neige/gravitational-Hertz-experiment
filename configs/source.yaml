@@ -11,7 +11,6 @@ Sampling:
 
 Noise:
   Model: detuned_signal_recycling
-  SqueezingDB: 10.0
   Estimation:
     FrequencySamples: 1000             # logarithmic samples, plus exact target
     TargetFrequency: null              # Hz; null uses rotor AngularVelocity / pi

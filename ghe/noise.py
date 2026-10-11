@@ -165,7 +165,7 @@ def squeeze_db_to_r(squeeze_db: float) -> float:
 
 def squeeze_quantum_noise_with_same_angle(
     freq: float | np.ndarray,
-    squeeze_db: float = 10.0,
+    squeeze_db: float | None = None,
     config: DetectorConfig | None = None,
 ) -> np.ndarray:
     """
@@ -177,9 +177,10 @@ def squeeze_quantum_noise_with_same_angle(
     """
 
     active_config = config or DetectorConfig()
+    active_squeeze_db = active_config.squeeze_db if squeeze_db is None else squeeze_db
     freq = np.asarray(freq, dtype=float)
     gravitationalWaveOmega = 2 * np.pi * freq
-    r = squeeze_db_to_r(squeeze_db)
+    r = squeeze_db_to_r(active_squeeze_db)
     e_m2r = np.exp(-2.0 * r)
     e_p2r = np.exp(2.0 * r)
     h_sql_sq = get_standard_quantum_limit(gravitationalWaveOmega, config=active_config) ** 2
@@ -189,7 +190,7 @@ def squeeze_quantum_noise_with_same_angle(
 
 def squeeze_quantum_noise_with_varying_angle(
     freq: float | np.ndarray,
-    squeeze_db: float = 10.0,
+    squeeze_db: float | None = None,
     config: DetectorConfig | None = None,
 ) -> np.ndarray:
     """
@@ -200,9 +201,10 @@ def squeeze_quantum_noise_with_varying_angle(
     """
 
     active_config = config or DetectorConfig()
+    active_squeeze_db = active_config.squeeze_db if squeeze_db is None else squeeze_db
     freq = np.asarray(freq, dtype=float)
     gravitationalWaveOmega = 2 * np.pi * freq
-    r = squeeze_db_to_r(squeeze_db)
+    r = squeeze_db_to_r(active_squeeze_db)
     h_sql_sq = get_standard_quantum_limit(gravitationalWaveOmega, config=active_config) ** 2
     kappa = get_coupling_constant(gravitationalWaveOmega, config=active_config)
     return (h_sql_sq / 2.0) * (kappa + 1 / kappa) * np.exp(-2.0 * r)
@@ -210,7 +212,7 @@ def squeeze_quantum_noise_with_varying_angle(
 
 def get_detuned_signal_recycling_noise_psd(
     freq: float | np.ndarray,
-    squeeze_db: float = 10.0,
+    squeeze_db: float | None = None,
     config: DetectorConfig | None = None,
 ) -> np.ndarray:
     """
@@ -223,12 +225,13 @@ def get_detuned_signal_recycling_noise_psd(
     """
 
     active_config = config or DetectorConfig()
+    active_squeeze_db = active_config.squeeze_db if squeeze_db is None else squeeze_db
     if active_config.T_SRM <= 0.0 or active_config.T_SRM > 1.0:
         raise ValueError("DetectorConfig.T_SRM must be in the interval (0, 1].")
 
     freq = np.asarray(freq, dtype=float)
     gravitationalWaveOmega = 2 * np.pi * freq
-    r = squeeze_db_to_r(squeeze_db)
+    r = squeeze_db_to_r(active_squeeze_db)
     h_sql_sq = get_standard_quantum_limit(gravitationalWaveOmega, config=active_config) ** 2
     kappa = get_coupling_constant(gravitationalWaveOmega, config=active_config)
 
@@ -270,17 +273,19 @@ def get_noise_psd(
     """Return detector quantum-noise PSD for the selected model."""
 
     active_noise = noise_config or NoiseConfig()
+    active_detector = detector_config or DetectorConfig()
+    active_squeeze_db = active_noise.effective_squeeze_db(active_detector)
     active_model = normalize_noise_model(model or active_noise.model)
     if active_model == DEFAULT_NOISE_MODEL:
         return squeeze_quantum_noise_with_varying_angle(
             freq,
-            squeeze_db=active_noise.squeeze_db,
-            config=detector_config,
+            squeeze_db=active_squeeze_db,
+            config=active_detector,
         )
     if active_model == DETUNED_SIGNAL_RECYCLING_NOISE_MODEL:
         return get_detuned_signal_recycling_noise_psd(
             freq,
-            squeeze_db=active_noise.squeeze_db,
-            config=detector_config,
+            squeeze_db=active_squeeze_db,
+            config=active_detector,
         )
     raise AssertionError(f"Unhandled normalized noise model: {active_model}")

@@ -68,7 +68,7 @@ def test_three_configurations_share_schema_and_grid(source_path):
     assert target['notebook_gas_constraints']['optical_pathlength']['pressure_ceiling_pa'] == pytest.approx(1.984302553819681e-9, rel=1e-6)
     assert target['metadata']['source_distance_m'] == 60000
     assert target['metadata']['effective_detector']['Squeezer']['AmplitudedB'] == 15
-    assert target['metadata']['effective_detector']['Optics']['SRM']['Tunephase'] == pytest.approx(1.5638384282313846)
+    assert target['metadata']['effective_detector']['Optics']['SRM']['Tunephase'] == pytest.approx(0.013915797127023843)
 
 
 def test_source_detuning_uses_rotor_frequency_not_reporting_target(source_path):
@@ -79,7 +79,7 @@ def test_source_detuning_uses_rotor_frequency_not_reporting_target(source_path):
     changed = calculate_thermal_gas(source_config=source_path)
     assert changed.target_frequency_hz == 600
     assert changed.metadata['source_frequency_hz'] == pytest.approx(660)
-    assert changed.metadata['effective_detector']['Optics']['SRM']['Tunephase'] != pytest.approx(1.5638384282313846)
+    assert changed.metadata['effective_detector']['Optics']['SRM']['Tunephase'] != pytest.approx(0.013915797127023843)
 
 
 def test_pressure_and_temperature_edits_change_expected_terms(source_path, tmp_path):

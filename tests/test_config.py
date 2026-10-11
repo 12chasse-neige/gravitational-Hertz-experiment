@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from math import pi
 
 import yaml
 
@@ -37,10 +38,14 @@ def test_dataclass_defaults_come_from_yaml_files() -> None:
     assert detector.T_ITM == detector_yaml["Optics"]["ITM"]["Transmittance"]
     assert detector.T_SRM == detector_yaml["Optics"]["SRM"]["Transmittance"]
     assert detector.length_SR == detector_yaml["Optics"]["SRM"]["CavityLength"]
+    assert detector.squeeze_db == detector_yaml["Squeezer"]["AmplitudedB"] == 15
     assert detector.loss_mirror_ppm == 1.0e6 * float(detector_yaml["Optics"]["Loss"])
     assert detector.loss_BS_ppm == 1.0e6 * float(detector_yaml["Optics"]["BSLoss"])
     assert sampling.duration_s == source_yaml["Sampling"]["Duration"]
     assert noise.model == source_yaml["Noise"]["Model"]
+    assert noise.squeeze_db is None
+    assert noise.effective_squeeze_db(detector) == 15
+    assert "SqueezingDB" not in source_yaml["Noise"]
 
     assert source.num == source_yaml["Source"]["Rotor"]["HoleCount"]
     assert source.D == source_yaml["Source"]["Rotor"]["Diameter"]
@@ -84,6 +89,9 @@ Optics:
     Transmittance: 0.325
     CavityLength: 55
     Tunephase: 0.1
+Squeezer:
+  Type: Freq Dependent
+  AmplitudedB: 13
 Seismic:
   Site: LHO
 """.strip(),
@@ -96,7 +104,8 @@ Seismic:
     assert detector.testmass == 39.6
     assert detector.T_SRM == 0.325
     assert detector.length_SR == 55.0
-    assert detector.phi_SR == 0.1
+    assert detector.phi_SR == (pi - 0.1) / 2
+    assert detector.squeeze_db == 13
     assert detector.loss_mirror_ppm == 40.0
     assert detector.loss_BS_ppm == 500.0
 

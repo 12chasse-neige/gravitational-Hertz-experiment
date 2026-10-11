@@ -15,7 +15,12 @@ from functools import lru_cache
 import numpy as np
 from numpy.polynomial.legendre import leggauss
 
-from .finite_distance import quadrupole_field, newtonian_acceleration
+from .finite_distance import (
+    TIDAL_COMPONENT_NAMES,
+    quadrupole_field,
+    quadrupole_tidal_components,
+    newtonian_acceleration,
+)
 
 
 @dataclass(frozen=True)
@@ -91,14 +96,18 @@ def validate_clearance(source_position, arm_length, source_radius=0.0):
     return source
 
 
-def _curvature_integral(source, quadrupole, angular_frequency, arm_length, G, c, order):
-    """Evaluate both arms in one batch; return differential signal and scale."""
+def _arm_samples(source, arm_length, order):
+    """Common spatial nodes for total and derivative-component responses."""
     nodes, weights = unit_quadrature(order)
     distances = arm_length * nodes
     # Shape (2, order, 3): each row of points follows one unperturbed light ray.
     relative = distances[None, :, None] * np.eye(3)[:2, None, :] - source
-    tidal = quadrupole_field(relative, quadrupole, angular_frequency, G=G, c=c)["tidal"]
-    longitudinal = np.stack((tidal[0, :, 0, 0], tidal[1, :, 1, 1]))
+    return distances, weights, relative
+
+
+def _integrate_tidal(tidal, distances, weights, angular_frequency, arm_length, c):
+    """Integrate (..., 2, order, 3, 3) curvature through the same photon weights."""
+    longitudinal = np.stack((tidal[..., 0, :, 0, 0], tidal[..., 1, :, 1, 1]), axis=-2)
     k = angular_frequency / c
     # Source retardation is already inside E through exp(ikr). These factors
     # ONLY sample outward and return photons at their earlier passage times.
@@ -107,7 +116,91 @@ def _curvature_integral(source, quadrupole, angular_frequency, arm_length, G, c,
     )
     # ds=L du cancels the 1/L normalization in eq.31, leaving 1/(2 Ω²).
     terms = weights * photon_weight * longitudinal / (2 * angular_frequency**2)
-    return complex(np.sum(terms[0]) - np.sum(terms[1])), float(np.sum(np.abs(terms)))
+    return (
+        np.sum(terms[..., 0, :], axis=-1) - np.sum(terms[..., 1, :], axis=-1),
+        np.sum(np.abs(terms), axis=(-2, -1)),
+    )
+
+
+def _curvature_integral(source, quadrupole, angular_frequency, arm_length, G, c, order):
+    """Evaluate both arms in one batch; return differential signal and scale."""
+    distances, weights, relative = _arm_samples(source, arm_length, order)
+    tidal = quadrupole_field(relative, quadrupole, angular_frequency, G=G, c=c)["tidal"]
+    value, scale = _integrate_tidal(
+        tidal, distances, weights, angular_frequency, arm_length, c
+    )
+    return complex(value), float(scale)
+
+
+def _component_integral(source, quadrupole, angular_frequency, arm_length, G, c, order):
+    distances, weights, relative = _arm_samples(source, arm_length, order)
+    components = quadrupole_tidal_components(
+        relative, quadrupole, angular_frequency, G=G, c=c
+    )
+    # Leading dimension labels derivative order; batch both arms for each order.
+    tidal = np.stack([components[name] for name in TIDAL_COMPONENT_NAMES])
+    return _integrate_tidal(tidal, distances, weights, angular_frequency, arm_length, c)
+
+
+def curvature_response_components(
+    source_position,
+    quadrupole,
+    angular_frequency,
+    *,
+    arm_length,
+    G,
+    c,
+    source_radius=0.0,
+    settings=None,
+) -> dict[str, DetectorResponse]:
+    """Converged model responses for Q/Qdot/Qddot/Q3/Q4, in peak strain.
+
+    Arguments and clearance checks match curvature_response. All five pieces
+    share the source retardation, finite-arm optics and 1/Omega² mechanical
+    response. They are additive terms of one observable, not separately
+    measurable quadratures. Refinement must satisfy each piece's own integral
+    scale, so cancellation in the total cannot conceal an unresolved Qdot term.
+    """
+    settings = settings or IntegrationSettings()
+    source = validate_clearance(source_position, arm_length, source_radius)
+    if not np.isfinite(angular_frequency) or angular_frequency <= 0:
+        raise ValueError("The periodic free-mass response requires positive frequency")
+    order = settings.initial_order
+    previous, _ = _component_integral(
+        source, quadrupole, angular_frequency, arm_length, G, c, order
+    )
+    while order < settings.max_order:
+        order = min(2 * order, settings.max_order)
+        current, scales = _component_integral(
+            source, quadrupole, angular_frequency, arm_length, G, c, order
+        )
+        errors = np.abs(current - previous)
+        converged = (
+            np.isfinite(errors)
+            & np.isfinite(scales)
+            & (
+                errors
+                <= settings.relative_tolerance
+                * np.maximum(scales, np.finfo(float).tiny)
+            )
+        )
+        if np.all(converged):
+            return {
+                name: DetectorResponse(
+                    complex(value), order, float(error), float(scale)
+                )
+                for name, value, error, scale in zip(
+                    TIDAL_COMPONENT_NAMES, current, errors, scales
+                )
+            }
+        previous = current
+    unresolved = ", ".join(
+        name for name, ok in zip(TIDAL_COMPONENT_NAMES, converged) if not ok
+    )
+    raise ArithmeticError(
+        f"Component arm integration did not converge by order {order} ({unresolved}); "
+        "refine settings or inspect geometry"
+    )
 
 
 def curvature_response(

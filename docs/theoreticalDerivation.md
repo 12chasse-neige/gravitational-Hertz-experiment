@@ -249,7 +249,6 @@ e^{ik(2L-s)}\\
 &+[\mathsf h_{00}-2p^i\mathsf h_{0i}+p^ip^j\mathsf h_{ij}]
 e^{iks}\},
 \end{aligned}
-\tag{28}
 $$
 
 where every metric is evaluated at $\mathbf r=s\mathbf p-\mathbf X$. Its $e^{ikr}$ factor already accounts for source-to-field propagation. The additional exponential factors describe the photon sampling times and must not be mistaken for a second source retardation.

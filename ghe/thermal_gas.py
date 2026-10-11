@@ -15,6 +15,7 @@ import numpy as np
 
 from .config import ConfigFileError, DetectorConfig, _detector_defaults_from_yaml, _read_yaml
 from .paths import CONFIG_DIR, DETECTOR_CONFIG_FILE, REPO_ROOT, SOURCE_CONFIG_FILE
+from .phase_convention import gwinc_tunephase_from_analytic_phi
 from .residual_gas import (
     SPECIES, at, calculate_residual_gas_constraints,
     calculate_residual_gas_spectra, number, physical,
@@ -107,13 +108,20 @@ class ThermalGasResult:
 
 
 def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
-                          source_config=SOURCE_CONFIG_FILE) -> ThermalGasResult:
+                          source_config=SOURCE_CONFIG_FILE,
+                          arm_length_m=None, frequency_hz=None) -> ThermalGasResult:
     """Read YAML afresh and evaluate only GWINC thermal and gas budget terms.
 
     ``+inherit`` selects the GWINC budget family. In GWINC, an omitted marker
     means aLIGO. We instantiate the selected class with the full effective YAML
     rather than relying on ``gwinc.load_budget`` merging: its ``Struct.update``
     skips nulls, which would erase GHE's automatic SR detuning request.
+
+    arm_length_m overrides only Infrastructure.Length in a private copy. Mirror
+    curvatures, powers, materials, temperatures and pressures remain fixed.
+    frequency_hz optionally supplies a small calculation grid for parameter
+    sweeps; the exact reporting target is always included. Neither option
+    modifies the source files or the default full-spectrum reporting behavior.
     """
     import gwinc
     from gwinc import Struct
@@ -124,6 +132,8 @@ def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
     source_path = resolve_config_path(source_config)
     detector = deepcopy(dict(_read_yaml(detector_path)))
     source = deepcopy(dict(_read_yaml(source_path)))
+    if arm_length_m is not None:
+        detector['Infrastructure']['Length'] = number(arm_length_m, 'arm_length_m')
     budget_name = detector.pop('+inherit', 'aLIGO')
     if budget_name not in ('CE2silicon', 'aLIGO'):
         raise ConfigFileError(f'Unsupported GWINC +inherit budget {budget_name!r}; use CE2silicon or aLIGO')
@@ -141,7 +151,7 @@ def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
     resolved = DetectorConfig(**detector_fields)
     if not np.isfinite(resolved.phi_SR):
         raise ConfigFileError('Optics.SRM.Tunephase must resolve to a finite phase')
-    detector['Optics']['SRM']['Tunephase'] = float(resolved.phi_SR)
+    detector['Optics']['SRM']['Tunephase'] = gwinc_tunephase_from_analytic_phi(resolved.phi_SR)
 
     settings = at(source, 'Noise', 'Estimation')
     samples = number(at(settings, 'FrequencySamples'), 'Noise.Estimation.FrequencySamples')
@@ -157,7 +167,14 @@ def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
     allowance = number(at(settings, 'GasAllowanceASD'), 'Noise.Estimation.GasAllowanceASD')
     # The common grid is independent of the selected detector and includes the
     # exact comparison frequency even if it lies outside the plotting band.
-    frequency = np.unique(np.append(np.geomspace(lower, upper, int(samples)), target))
+    if frequency_hz is None:
+        frequency = np.unique(np.append(np.geomspace(lower, upper, int(samples)), target))
+    else:
+        frequency = np.asarray(frequency_hz, dtype=float)
+        if (frequency.ndim != 1 or frequency.size == 0
+                or not np.all(np.isfinite(frequency) & (frequency > 0))):
+            raise ConfigFileError('frequency_hz must be a nonempty positive finite 1D array')
+        frequency = np.unique(np.append(frequency, target))
 
     gas = calculate_residual_gas_spectra(frequency, detector)
     constraints = calculate_residual_gas_constraints(detector, target, allowance)
@@ -241,6 +258,7 @@ def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
     metadata = {
         'detector_config_path': str(detector_path),
         'source_config_path': str(source_path),
+        'arm_length_override_m': None if arm_length_m is None else float(arm_length_m),
         'gwinc_version': gwinc.__version__,
         'gwinc_budget_class': budget_name,
         'computed_gwinc_terms': list(selected),
@@ -265,6 +283,7 @@ def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
             'Uniform molecular partial pressures in each location; independent species.',
             'The gas pressure ceiling allocates the full paper allowance to each mechanism independently.',
             'Null SR tune phase is resolved at the source GW frequency, not the reporting target frequency.',
+            'GWINC Tunephase equals pi minus twice the analytic Buonanno-Chen detuning angle phi_SR.',
             'Squeezer settings remain those in the selected detector YAML; they do not enter this selected-term estimate.',
         ],
     }

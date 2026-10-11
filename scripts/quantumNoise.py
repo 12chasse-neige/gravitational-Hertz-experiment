@@ -13,22 +13,26 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from scipy.optimize import brentq
 
-from ghe.config import DetectorConfig, NoiseConfig, PAPER_FIGURES_DIR
+from ghe.config import DETECTOR_CONFIG_FILE, DetectorConfig, PAPER_FIGURES_DIR
 from ghe.noise import (
     get_detuned_signal_recycling_noise_psd,
     squeeze_quantum_noise_with_varying_angle,
 )
+from ghe.paths import CONFIG_DIR
+
+
+CE2_SILICON_CONFIG_FILE = CONFIG_DIR / "CE2silicon.yaml"
 
 
 class MissingOptionalDependency(RuntimeError):
     """Raised when an optional plotting dependency is not installed."""
 
 
-def require_gwinc() -> tuple[Any, Any]:
+def require_gwinc() -> Any:
     try:
         import gwinc
-        from gwinc import Struct
     except ModuleNotFoundError as exc:
         if exc.name == "gwinc":
             raise MissingOptionalDependency(
@@ -36,35 +40,171 @@ def require_gwinc() -> tuple[Any, Any]:
                 "Install project dependencies with: python -m pip install -r requirements.txt"
             ) from exc
         raise
-    return gwinc, Struct
+    return gwinc
+
+
+def _gwinc_quantum_psd(freq: np.ndarray, ifo: Any) -> np.ndarray:
+    """Evaluate GWINC quantum noise and its finite-arm strain calibration.
+
+    GWINC 0.6.2's full Quantum budget requests a phase-noise subterm even when
+    zero squeezing omits that subterm.  Its ``shotrad`` function still returns
+    all physical vacuum terms in displacement PSD.  Sum those independent
+    terms once and apply the same strain calibration as the full budget.
+    """
+    from gwinc.ifo.noises import dhdl, ifo_power
+    from gwinc.noise.quantum import shotrad
+    from gwinc.suspension import precomp_suspension
+
+    suspension = precomp_suspension(freq, ifo)
+    power = ifo_power(ifo)
+    displacement_terms = shotrad(freq, ifo, suspension, power)
+    displacement_psd = sum(
+        displacement_terms.values(), np.zeros_like(freq, dtype=float)
+    )
+    strain_calibration, _ = dhdl(freq, ifo.Infrastructure.Length)
+    return displacement_psd * strain_calibration
+
+
+def _load_unsqueezed_gwinc_ifo(path: str | Path) -> Any:
+    """Load GWINC optics with its physical squeezer disabled.
+
+    Both GWINC curves use the same ideal ASD multiplier as the analytic
+    curves.  Applying it after the unsqueezed quantum calculation makes the
+    comparison independent of the YAML filter-cavity design.
+    """
+    ifo = require_gwinc().load_budget(str(path)).ifo
+    ifo.Squeezer.AmplitudedB = 0.0
+    ifo.Squeezer.Type = "None"
+    return ifo
+
+
+def tune_gwinc_srm_phase(ifo: Any, target_frequency_hz: float) -> float:
+    """Place a local GWINC quantum-PSD minimum at the target frequency.
+
+    ``Optics.SRM.Tunephase`` is GWINC's public detuning parameter.  Its
+    signal-recycled optical model includes the finite SR-cavity propagation,
+    so the analytic model's phase is not a reliable phase for this curve.
+    The ideal squeezing multiplier is constant in frequency and cannot move
+    the minimum; tune with the unsqueezed GWINC PSD instead.
+    """
+    if not np.isfinite(target_frequency_hz) or target_frequency_hz <= 0:
+        raise ValueError("The GWINC tuning frequency must be finite and positive.")
+    transmittance = ifo.Optics.SRM.Transmittance
+    if not np.isfinite(transmittance) or not 0 < transmittance < 1:
+        raise ValueError("A tunable GWINC SR dip requires 0 < SRM transmittance < 1.")
+
+    # Differentiate log PSD rather than PSD to keep the root calculation well
+    # scaled at strain-noise values near 1e-50 Hz^-1.  A short symmetric step
+    # resolves the narrow resonance without changing its measured location.
+    step_hz = min(0.01, 1e-4 * target_frequency_hz)
+    probe_freq = target_frequency_hz + np.array([-step_hz, 0.0, step_hz])
+
+    def phase_statistics(tunephase: float) -> tuple[float, float, float]:
+        ifo.Optics.SRM.Tunephase = float(tunephase)
+        psd = _gwinc_quantum_psd(probe_freq, ifo)
+        if not np.all(np.isfinite(psd)) or np.any(psd <= 0):
+            return np.nan, np.nan, np.nan
+        log_psd = np.log(psd)
+        slope = (log_psd[2] - log_psd[0]) / (2 * step_hz)
+        curvature = (log_psd[2] - 2 * log_psd[1] + log_psd[0]) / step_hz**2
+        return float(slope), float(curvature), float(psd[1])
+
+    # Search the positive-detuning branch.  A zero frequency slope can also
+    # describe a maximum; keep only roots with positive frequency curvature.
+    phase_grid = np.linspace(0.0, np.pi, 1001)
+    slopes = [phase_statistics(phase)[0] for phase in phase_grid]
+    candidates: list[tuple[float, float]] = []
+    for left, right, left_slope, right_slope in zip(
+        phase_grid[:-1], phase_grid[1:], slopes[:-1], slopes[1:]
+    ):
+        if not np.isfinite(left_slope) or not np.isfinite(right_slope):
+            continue
+        if left_slope == 0:
+            root = float(left)
+        elif left_slope * right_slope < 0:
+            root = brentq(
+                lambda phase: phase_statistics(phase)[0],
+                left,
+                right,
+                xtol=1e-13,
+            )
+        else:
+            continue
+        _, curvature, target_psd = phase_statistics(root)
+        if np.isfinite(curvature) and curvature > 0:
+            candidates.append((target_psd, root))
+
+    if not candidates:
+        raise ValueError(
+            f"GWINC has no positive-detuning quantum-noise dip at "
+            f"{target_frequency_hz:g} Hz for the selected SRM settings."
+        )
+    tunephase = min(candidates)[1]
+    ifo.Optics.SRM.Tunephase = tunephase
+    return tunephase
 
 
 def get_gwinc_quantum_asd(
     freq: np.ndarray,
-    squeeze_db: float,
-    srm: float | None = None,
-    l_sr: float | None = None,
-    phi_sr: float | None = None,
-    ifo: str | Path = "aLIGO",
+    squeeze_db: float | None = None,
+    ifo: str | Path = CE2_SILICON_CONFIG_FILE,
 ) -> np.ndarray:
-    gwinc, Struct = require_gwinc()
+    """CE2 quantum ASD without signal recycling, with ideal dB scaling.
 
-    budget = gwinc.load_budget(str(ifo))
-    if srm is not None:
-        budget.ifo.Optics.SRM.Transmittance = srm
-    if l_sr is not None:
-        budget.ifo.Optics.SRM.CavityLength = l_sr
-    if phi_sr is not None:
-        budget.ifo.Optics.SRM.Tunephase = phi_sr
-    budget.ifo.Squeezer = Struct(
-        Type="Freq Dependent",
-        AmplitudedB=squeeze_db,
-        AntiAmplitudedB=squeeze_db,
-        SQZAngle=0.0,
-        InjectionLoss=0.0,
+    The unsqueezed GWINC curve includes CE2 optical and readout losses.  The
+    final multiplier models the same ideal frequency-dependent squeezing rule
+    used by the analytic curves; it does not simulate CE2's filter cavity.
+    """
+    freq = np.asarray(freq, dtype=float)
+    if freq.ndim != 1 or not np.all(np.isfinite(freq)) or np.any(freq <= 0):
+        raise ValueError("freq must be a one-dimensional array of positive frequencies.")
+    active_squeeze_db = (
+        DetectorConfig.from_yaml(DETECTOR_CONFIG_FILE).squeeze_db
+        if squeeze_db is None
+        else squeeze_db
     )
-    trace = budget.run(freq=freq)
-    return trace["Quantum"].asd
+    if not np.isfinite(active_squeeze_db) or active_squeeze_db < 0:
+        raise ValueError("squeeze_db must be finite and nonnegative.")
+
+    gwinc_ifo = _load_unsqueezed_gwinc_ifo(ifo)
+    # Fully transmitting SRM removes recycling.  Zero squeezing bypasses the
+    # YAML's physical filter cavity, injection loss, and LO angle jitter.
+    gwinc_ifo.Optics.SRM.Transmittance = 1.0
+    gwinc_ifo.Optics.SRM.Tunephase = 0.0
+    unsqueezed_psd = _gwinc_quantum_psd(freq, gwinc_ifo)
+    return np.sqrt(unsqueezed_psd) * 10.0 ** (-active_squeeze_db / 20.0)
+
+
+def get_gwinc_detuned_quantum_asd(
+    freq: np.ndarray,
+    *,
+    detector_config: DetectorConfig,
+    squeeze_db: float | None = None,
+    ifo: str | Path = CE2_SILICON_CONFIG_FILE,
+) -> tuple[np.ndarray, float]:
+    """Return ideal-scaled GWINC quantum ASD with SR tuned to the source.
+
+    CE2 supplies the optical plant; the analytic detector supplies only the
+    SRM transmittance, SR-cavity length, target frequency, and shared dB level.
+    GWINC determines its own detuning phase from its complete quantum model.
+    """
+    freq = np.asarray(freq, dtype=float)
+    if freq.ndim != 1 or not np.all(np.isfinite(freq)) or np.any(freq <= 0):
+        raise ValueError("freq must be a one-dimensional array of positive frequencies.")
+    active_squeeze_db = (
+        detector_config.squeeze_db if squeeze_db is None else squeeze_db
+    )
+    if not np.isfinite(active_squeeze_db) or active_squeeze_db < 0:
+        raise ValueError("squeeze_db must be finite and nonnegative.")
+
+    gwinc_ifo = _load_unsqueezed_gwinc_ifo(ifo)
+    gwinc_ifo.Optics.SRM.Transmittance = detector_config.T_SRM
+    gwinc_ifo.Optics.SRM.CavityLength = detector_config.length_SR
+    tunephase = tune_gwinc_srm_phase(
+        gwinc_ifo, detector_config.resonance_frequency_hz
+    )
+    unsqueezed_psd = _gwinc_quantum_psd(freq, gwinc_ifo)
+    return np.sqrt(unsqueezed_psd) * 10.0 ** (-active_squeeze_db / 20.0), tunephase
 
 
 def plot_noise_curve_with_detuned_interferometer(
@@ -77,22 +217,24 @@ def plot_noise_curve_with_detuned_interferometer(
     points: int = 10000,
     squeeze_db: float | None = None,
     detector_config: DetectorConfig | None = None,
-    gwinc_ifo: str | Path = "aLIGO",
+    gwinc_ifo: str | Path = CE2_SILICON_CONFIG_FILE,
 ) -> float:
     if freq_max_hz <= freq_min_hz:
         raise ValueError("freq_max_hz must be greater than freq_min_hz.")
     if points < 2:
         raise ValueError("points must be at least 2.")
 
-    active_detector = detector_config or DetectorConfig()
-    active_squeeze_db = NoiseConfig().squeeze_db if squeeze_db is None else squeeze_db
+    active_detector = detector_config or DetectorConfig.from_yaml(DETECTOR_CONFIG_FILE)
+    active_squeeze_db = active_detector.squeeze_db if squeeze_db is None else squeeze_db
     # The quantum-noise formulas are singular at DC, so compute just above 0 Hz
     # while displaying the requested 0 Hz lower axis bound.
     calculation_min_hz = max(freq_min_hz, 1.0)
-    freq = np.geomspace(calculation_min_hz, freq_max_hz, points)
     target_frequency_hz = active_detector.resonance_frequency_hz
-    if freq_min_hz <= target_frequency_hz <= freq_max_hz:
-        freq = np.unique(np.append(freq, target_frequency_hz))
+    if not calculation_min_hz <= target_frequency_hz <= freq_max_hz:
+        raise ValueError("The tuning frequency must lie inside the plotted frequency band.")
+    freq = np.unique(
+        np.append(np.geomspace(calculation_min_hz, freq_max_hz, points), target_frequency_hz)
+    )
     previous_asd = np.sqrt(
         squeeze_quantum_noise_with_varying_angle(
             freq,
@@ -107,13 +249,25 @@ def plot_noise_curve_with_detuned_interferometer(
             config=active_detector,
         )
     )
-    # GWINC reads the selected IFO file directly; the analytic curves use the
-    # corresponding subset translated into DetectorConfig.
+    # Use CE2 optics with no signal recycling.  The squeeze level still comes
+    # from the analytic detector, so a detector YAML edit moves all curves.
     gwinc_asd = get_gwinc_quantum_asd(
         freq,
         squeeze_db=active_squeeze_db,
         ifo=gwinc_ifo,
     )
+    gwinc_detuned_asd, gwinc_tunephase = get_gwinc_detuned_quantum_asd(
+        freq,
+        detector_config=active_detector,
+        squeeze_db=active_squeeze_db,
+        ifo=gwinc_ifo,
+    )
+
+    config_name = Path(gwinc_ifo).stem
+    if config_name == "CE2silicon":
+        config_label = "CE2 silicon optics"
+    else:
+        config_label = config_name
 
     target_detuned_asd = float(
         np.sqrt(
@@ -148,9 +302,10 @@ def plot_noise_curve_with_detuned_interferometer(
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
     }
-    blue = "#0072B2"
+    blue = "#0072B2" 
     vermillion = "#D55E00"
     bluish_green = "#009E73"
+    purple = "#CC79A7"
 
     with plt.rc_context(paper_style):
         fig, ax = plt.subplots(figsize=(7.2, 3.8))
@@ -160,7 +315,15 @@ def plot_noise_curve_with_detuned_interferometer(
             color=blue,
             linestyle="-",
             linewidth=1.4,
-            label=rf"GWINC quantum noise + {active_squeeze_db:g} dB squeezing",
+            label=rf"GWINC {config_label}, no SR; ideal FD {active_squeeze_db:g} dB",
+        )
+        ax.loglog(
+            freq,
+            gwinc_detuned_asd,
+            color=purple,
+            linestyle=":",
+            linewidth=1.7,
+            label=rf"GWINC {config_label}, tuned SR; ideal FD {active_squeeze_db:g} dB",
         )
         ax.loglog(
             freq,
@@ -168,7 +331,7 @@ def plot_noise_curve_with_detuned_interferometer(
             color=vermillion,
             linestyle="--",
             linewidth=1.4,
-            label=rf"Analytic model + {active_squeeze_db:g} dB FD squeezing",
+            label=rf"Analytic model, no SR; ideal FD {active_squeeze_db:g} dB",
         )
         ax.loglog(
             freq,
@@ -176,7 +339,7 @@ def plot_noise_curve_with_detuned_interferometer(
             color=bluish_green,
             linestyle="-.",
             linewidth=1.45,
-            label=rf"Detuned SR model + {active_squeeze_db:g} dB FD squeezing",
+            label=rf"Analytic model, detuned SR; ideal FD {active_squeeze_db:g} dB",
         )
         ax.axvline(target_frequency_hz, color="0.55", linestyle=":", linewidth=0.9)
         ax.plot(
@@ -189,13 +352,24 @@ def plot_noise_curve_with_detuned_interferometer(
             markeredgewidth=1.0,
             zorder=5,
         )
+        target_index = int(np.flatnonzero(freq == target_frequency_hz)[0])
+        ax.plot(
+            target_frequency_hz,
+            gwinc_detuned_asd[target_index],
+            marker="o",
+            markersize=4.2,
+            markerfacecolor="white",
+            markeredgecolor=purple,
+            markeredgewidth=1.0,
+            zorder=5,
+        )
         ax.annotate(
             rf"$f_0={target_frequency_hz:g}\,\mathrm{{Hz}}$"
             "\n"
             rf"$\sqrt{{S_h}}={target_asd_mantissa:.2f}\times10^{{{target_asd_exponent}}}"
             rf"\,\mathrm{{Hz}}^{{-1/2}}$",
             xy=(target_frequency_hz, target_detuned_asd),
-            xytext=(-8, 31),
+            xytext=(-20, 10),
             textcoords="offset points",
             ha="right",
             va="bottom",
@@ -211,7 +385,14 @@ def plot_noise_curve_with_detuned_interferometer(
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.tick_params(direction="out", length=3.2)
-        ax.legend(frameon=False, loc="lower left", handlelength=3.0)
+        ax.legend(
+            frameon=True,
+            facecolor="white",
+            edgecolor="none",
+            framealpha=0.9,
+            loc="upper left",
+            handlelength=3.0,
+        )
         fig.subplots_adjust(left=0.12, right=0.99, bottom=0.16, top=0.98)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -222,14 +403,33 @@ def plot_noise_curve_with_detuned_interferometer(
         plt.close(fig)
     print(f"Saved figure: {output_path}")
     print(
-        f"Detuned ASD at {target_frequency_hz:g} Hz = "
+        f"GWINC tuned SRM Tunephase at {target_frequency_hz:g} Hz = "
+        f"{gwinc_tunephase:.14f} rad "
+        f"(T_SRM={active_detector.T_SRM:g}, L_SR={active_detector.length_SR:g} m)"
+    )
+    target_indices = np.flatnonzero(freq == target_frequency_hz)
+    if target_indices.size:
+        target_index = int(target_indices[0])
+        print(
+            f"GWINC CE2 no-SR ideal ASD at {target_frequency_hz:g} Hz = "
+            f"{gwinc_asd[target_index]:.17e} Hz^(-1/2)"
+        )
+        print(
+            f"GWINC CE2 tuned-SR ideal ASD at {target_frequency_hz:g} Hz = "
+            f"{gwinc_detuned_asd[target_index]:.17e} Hz^(-1/2)"
+        )
+        print(
+            f"Analytic no-SR ideal ASD at {target_frequency_hz:g} Hz = "
+            f"{previous_asd[target_index]:.17e} Hz^(-1/2)"
+        )
+    print(
+        f"Analytic detuned-SR ideal ASD at {target_frequency_hz:g} Hz = "
         f"{target_detuned_asd:.17e} Hz^(-1/2)"
     )
     return target_detuned_asd
 
 
 def parse_arguments() -> argparse.Namespace:
-    noise_defaults = NoiseConfig()
     parser = argparse.ArgumentParser(description="Plot quantum-noise model comparisons.")
     parser.add_argument(
         "--output",
@@ -260,40 +460,56 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--squeeze-db",
         type=float,
-        default=noise_defaults.squeeze_db,
-        help=f"Squeezing level in dB. Default: {noise_defaults.squeeze_db:g}.",
+        default=None,
+        help="Optional one-run dB override; default comes from detector.yaml Squeezer.AmplitudedB.",
     )
     parser.add_argument(
         "--detector-config",
         type=Path,
-        default=None,
+        default=DETECTOR_CONFIG_FILE,
         help=(
-            "Optional GWINC ifo.yaml file used by both the GWINC reference and "
-            "the analytic detector model."
+            "Detector YAML for the analytic curves and shared squeezing level. "
+            "Default: configs/detector.yaml."
         ),
+    )
+    parser.add_argument(
+        "--gwinc-config",
+        type=Path,
+        default=CE2_SILICON_CONFIG_FILE,
+        help="GWINC optics YAML for both GWINC curves. Default: configs/CE2silicon.yaml.",
+    )
+    parser.add_argument(
+        "--target-frequency-hz",
+        type=float,
+        default=None,
+        help="One-run tuning target for both detuned curves; default: source GW frequency.",
     )
     parser.add_argument(
         "--length-sr",
         type=float,
         default=None,
-        help="Override DetectorConfig.length_SR for the detuned SR curve.",
+        help="Override SR cavity length in both detuned curves.",
     )
     parser.add_argument(
         "--t-srm",
         type=float,
         default=None,
-        help="Override DetectorConfig.T_SRM for the detuned SR curve.",
+        help="Override SRM transmittance in both detuned curves.",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_arguments()
-    detector_config = (
-        DetectorConfig()
-        if args.detector_config is None
-        else DetectorConfig.from_yaml(args.detector_config)
-    )
+    detector_config = DetectorConfig.from_yaml(args.detector_config)
+    if args.target_frequency_hz is not None:
+        if not np.isfinite(args.target_frequency_hz) or args.target_frequency_hz <= 0:
+            raise ValueError("--target-frequency-hz must be finite and positive.")
+        detector_config = replace(
+            detector_config,
+            resonance_frequency_hz=args.target_frequency_hz,
+            phi_SR=None,
+        )
     if args.length_sr is not None:
         detector_config = replace(detector_config, length_SR=args.length_sr, phi_SR=None)
     if args.t_srm is not None:
@@ -306,7 +522,7 @@ def main() -> None:
         points=args.points,
         squeeze_db=args.squeeze_db,
         detector_config=detector_config,
-        gwinc_ifo=args.detector_config or "aLIGO",
+        gwinc_ifo=args.gwinc_config,
     )
 
 

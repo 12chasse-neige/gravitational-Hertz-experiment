@@ -552,7 +552,10 @@ The present full-versus-Newtonian comparison and $kL\simeq0.05$ make (45) with t
 
 ### 10.3 Recomputed conditional SNRs and noise limitations
 
-Using the current ideal detuned model, 10 dB squeezing, the source frequency 600 Hz, and $T_{\rm yr}=365\times24\times3600$ s, the recomputed values are:
+For the historical 4 km benchmark, using the ideal detuned model with 10 dB
+squeezing, source frequency 600 Hz, and $T_{\rm yr}=365\times24\times3600$ s,
+the archived recomputed values are shown below. Current runs read the nominal
+squeezing from `configs/detector.yaml` (15 dB for the CE2 silicon hybrid).
 
 | Quantity | Paper $L,R$, cached angles | Former 3995 m defaults, cached angles | Paper $L,R$, arm-extension example |
 |---|---:|---:|---:|
@@ -634,5 +637,4 @@ python -m pytest tests/test_finite_distance.py tests/test_near_field.py tests/te
 ```
 
 The direct integral offers `--quick` for one quadrature setting and `--extended` for a third. Both scripts offer output-path overrides and use the saved geometry when present; if the ignored cache is absent, they use and identify the embedded angle snapshot in (37). Source and detector parameters are read from the current configuration, and recorded with the outputs. The paper benchmark deliberately uses the source/optical parameters available on the analysis date; future configuration changes will alter numerical results.
-
 

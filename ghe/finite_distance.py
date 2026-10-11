@@ -17,6 +17,9 @@ from .config import SourceConfig
 from .geometry import rotation_body_to_detector
 
 
+TIDAL_COMPONENT_NAMES = ("Q", "Qdot", "Qddot", "Q3", "Q4")
+
+
 def rotor_quadrupole_phasor(theta_rot, phi_rot, *, config=None):
     """Return the oscillating STF mass moment at twice the two-hole spin rate.
 
@@ -33,20 +36,8 @@ def rotor_quadrupole_phasor(theta_rot, phi_rot, *, config=None):
     return rotation @ body @ rotation.T
 
 
-def quadrupole_field(relative_position, quadrupole, angular_frequency, *, G, c):
-    """Return physical covariant h, coordinate acceleration, and c² R_0i0j.
-
-    relative_position: (..., 3) source-to-field vectors [m]. quadrupole: (3, 3)
-    complex STF mass moment [kg m²]; angular_frequency: signal frequency [rad/s].
-    Returned metric, acceleration and tidal arrays have trailing shapes (4,4),
-    (3,), (3,3) and units dimensionless, m/s², s^-2 respectively.
-
-    relative_position points from source COM to field point. The metric is in
-    harmonic gauge and includes the time-dependent mass quadrupole only; static
-    monopole/spin terms are excluded. Acceleration is for an initially slowly
-    moving geodesic in these coordinates. Only the total interferometer signal
-    (or curvature) is gauge invariant, not the separate acceleration/path terms.
-    """
+def _validate_field_inputs(relative_position, quadrupole, angular_frequency, G, c):
+    """Shared exterior-field input checks; return vectors, STF moment and radii."""
     x = np.asarray(relative_position, dtype=float)
     Q = np.asarray(quadrupole, dtype=complex)
     if x.ndim < 1 or x.shape[-1] != 3 or not np.all(np.isfinite(x)):
@@ -66,6 +57,72 @@ def quadrupole_field(relative_position, quadrupole, angular_frequency, *, G, c):
         or c <= 0
     ):
         raise ValueError("Require finite nonnegative frequency and positive G, c")
+    return x, Q, r
+
+
+def quadrupole_tidal_components(
+    relative_position, quadrupole, angular_frequency, *, G, c
+):
+    """Return five derivative-order pieces of E_ij=c² R_0i0j, in s^-2.
+
+    Inputs and batch shapes match quadrupole_field. Keys Q/Qdot/Qddot/Q3/Q4
+    label explicit derivatives at u=t-r/c, NOT Fourier quadratures. Every
+    component retains exp(ikr): expanding it would mix derivative orders and
+    hide the cancellation of first-order retardation between Q and Qdot.
+
+    The four angular coefficients below are those in theoreticalDerivation.md,
+    written in powers of z=ikr. Since Q^(m) maps to (-i Omega)^m Q, z^m Q
+    maps to (-r/c)^m Q^(m). In particular, the linear row is minus the static
+    row, giving E[Qdot]=G/(c r^4) times the static angular tensor of Qdot(u).
+    These additive pieces are model diagnostics, not independent observables.
+    """
+    x, Q, r = _validate_field_inputs(
+        relative_position, quadrupole, angular_frequency, G, c
+    )
+    n = x / r[..., None]
+    z = 1j * angular_frequency * r / c
+    q = np.einsum("ij,...j->...i", Q, n)
+    S = np.einsum("...i,...i->...", n, q)
+    nq = n[..., :, None] * q[..., None, :]
+    angular = (
+        Q,
+        nq + np.swapaxes(nq, -1, -2),
+        np.eye(3) * S[..., None, None],
+        n[..., :, None] * n[..., None, :] * S[..., None, None],
+    )
+    # Columns multiply Q_ij, n_i q_j+n_j q_i, delta_ij S, n_i n_j S.
+    coefficients = (
+        (-3, 15, 15 / 2, -105 / 2),
+        (3, -15, -15 / 2, 105 / 2),
+        (-3, 9, 3 / 2, -45 / 2),
+        (2, -4, 1, 5),
+        (-1, 1, -1 / 2, -1 / 2),
+    )
+    prefactor = G * np.exp(z) / r**5
+    return {
+        name: (prefactor * z**order)[..., None, None]
+        * sum(coefficient * tensor for coefficient, tensor in zip(row, angular))
+        for order, (name, row) in enumerate(zip(TIDAL_COMPONENT_NAMES, coefficients))
+    }
+
+
+def quadrupole_field(relative_position, quadrupole, angular_frequency, *, G, c):
+    """Return physical covariant h, coordinate acceleration, and c² R_0i0j.
+
+    relative_position: (..., 3) source-to-field vectors [m]. quadrupole: (3, 3)
+    complex STF mass moment [kg m²]; angular_frequency: signal frequency [rad/s].
+    Returned metric, acceleration and tidal arrays have trailing shapes (4,4),
+    (3,), (3,3) and units dimensionless, m/s², s^-2 respectively.
+
+    relative_position points from source COM to field point. The metric is in
+    harmonic gauge and includes the time-dependent mass quadrupole only; static
+    monopole/spin terms are excluded. Acceleration is for an initially slowly
+    moving geodesic in these coordinates. Only the total interferometer signal
+    (or curvature) is gauge invariant, not the separate acceleration/path terms.
+    """
+    x, Q, r = _validate_field_inputs(
+        relative_position, quadrupole, angular_frequency, G, c
+    )
     n = x / r[..., None]
     k = angular_frequency / c
     z = 1j * k * r

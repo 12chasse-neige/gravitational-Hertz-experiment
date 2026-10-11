@@ -1,6 +1,7 @@
 # GHE CE2 silicon hybrid: CE2 parameters except the signal-recycling mirror.
 # The SRM settings below retain GHE's narrowband 600 Hz design. A null
 # Tunephase is resolved using the source GW frequency before GWINC runs.
+# GWINC Tunephase is pi minus twice the analytic Buonanno-Chen angle phi_SR.
 # This is not the published CE2 sensitivity configuration.
 +inherit: CE2silicon
 # GWINC CE2 (Silicon) interferometer parameters

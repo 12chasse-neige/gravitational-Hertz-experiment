@@ -11,6 +11,7 @@ from typing import Any, Mapping
 import numpy as np
 import yaml
 
+from .phase_convention import analytic_phi_from_gwinc_tunephase
 from .paths import (
     BEST_POSITION_FILE,
     BEST_POSITION_JSON_FILE,
@@ -137,9 +138,6 @@ _SAMPLING_DEFAULTS = {
 
 _NOISE_DEFAULTS = {
     "model": str(_yaml_value(_SOURCE_YAML, SOURCE_CONFIG_FILE, "Noise", "Model")),
-    "squeeze_db": _float_value(
-        _SOURCE_YAML, SOURCE_CONFIG_FILE, "Noise", "SqueezingDB"
-    ),
     "min_frequency_hz": _float_value(
         _SOURCE_YAML, SOURCE_CONFIG_FILE, "Noise", "FrequencyBand", "Minimum"
     ),
@@ -195,11 +193,29 @@ def _detector_defaults_from_yaml(
     # detector model historically stores these two values in ppm.
     loss_mirror_ppm = 1.0e6 * _float_value(document, path, "Optics", "Loss")
     loss_bs_ppm = 1.0e6 * _float_value(document, path, "Optics", "BSLoss")
+    # GWINC's public Tunephase uses the Buonanno--Chen detuning convention
+    # phi_SR = (pi - Tunephase)/2, as in GWINC's legacy BnC quantum model.
+    gwinc_tunephase = _optional_float_value(
+        document, path, "Optics", "SRM", "Tunephase"
+    )
+    squeezer = document.get("Squeezer")
+    if squeezer is not None and not isinstance(squeezer, Mapping):
+        raise ConfigFileError(f"'Squeezer' in {path} must be a mapping")
+    if squeezer is None or squeezer.get("Type") == "None":
+        squeeze_db = 0.0
+    else:
+        squeeze_db = _float_value(document, path, "Squeezer", "AmplitudedB")
+    if not np.isfinite(squeeze_db) or squeeze_db < 0.0:
+        raise ConfigFileError(f"'Squeezer.AmplitudedB' in {path} must be finite and nonnegative")
     return {
         "testmass": testmass,
         "length": _float_value(document, path, "Infrastructure", "Length"),
         "length_SR": _float_value(document, path, "Optics", "SRM", "CavityLength"),
-        "phi_SR": _optional_float_value(document, path, "Optics", "SRM", "Tunephase"),
+        "phi_SR": (
+            None if gwinc_tunephase is None
+            else analytic_phi_from_gwinc_tunephase(gwinc_tunephase)
+        ),
+        "squeeze_db": squeeze_db,
         "wavelength": _float_value(document, path, "Laser", "Wavelength"),
         "power": _float_value(document, path, "Laser", "Power"),
         "T_PRM": _float_value(document, path, "Optics", "PRM", "Transmittance"),
@@ -365,6 +381,9 @@ class DetectorConfig:
             "LIGO_SIGNAL_RECYCLE_DETUNE_PHASE", _DETECTOR_DEFAULTS["phi_SR"]
         )
     )
+    # Nominal injected squeezing from the selected GWINC detector YAML.  The
+    # analytic model uses only this dB level, not filter-cavity losses/rotation.
+    squeeze_db: float = _DETECTOR_DEFAULTS["squeeze_db"]
     resonance_frequency_hz: float | None = None
     hbar: float = _CONSTANT_DEFAULTS["hbar"]
     wavelength: float = _DETECTOR_DEFAULTS["wavelength"]
@@ -452,12 +471,20 @@ class SourceArrayConfig:
 
 @dataclass(frozen=True)
 class NoiseConfig:
-    """SNR integration band, squeezing level, and detector-noise model."""
+    """SNR band/model with an optional one-run squeezing override.
+
+    With no override, the detector's Squeezer.AmplitudedB is authoritative.
+    """
 
     model: str = _NOISE_DEFAULTS["model"]
-    squeeze_db: float = _NOISE_DEFAULTS["squeeze_db"]
+    squeeze_db: float | None = None
     min_frequency_hz: float = _NOISE_DEFAULTS["min_frequency_hz"]
     max_frequency_hz: float = _NOISE_DEFAULTS["max_frequency_hz"]
+
+    def effective_squeeze_db(self, detector: DetectorConfig) -> float:
+        """Return the explicit override or the selected detector's dB level."""
+
+        return detector.squeeze_db if self.squeeze_db is None else self.squeeze_db
 
 
 @dataclass(frozen=True)

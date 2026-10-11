@@ -29,6 +29,134 @@ or phasor, spectrum when requested, SNR, and model metadata. Without `--run-dir`
 standard `data/` destinations remain available. The best-position cache remains
 shared and is accepted only if its source configuration and model match.
 
+## Single-source Qdot contribution and quadrature projection
+
+```bash
+python scripts/extractQdot.py
+python scripts/extractQdot.py --angles 0.6 0.8 0.4 0.8 \
+  --distance 6000 --rotor-delay-rad 0.2 --duration 0.01 \
+  --sample-rate 120000 --output-dir runs/qdot-example
+python scripts/extractQdot.py --angles 0.6 0.8 0.4 0.8 \
+  --distance 6000 --rotor-delay-rad 0.2 \
+  --signal-input runs/qdot-example/signals.npz \
+  --output-dir runs/qdot-loaded
+```
+
+With no arguments, the script generates a single-source signal using the active
+source and sampling configuration. It reads a compatible best-position cache,
+or optimizes the geometry without saving over that cache. `--angles` specifies
+`theta_src phi_src theta_rot phi_rot` in detector-frame radians. Distance defaults
+to the current source configuration's `R/L` placement; rotor delay defaults to
+zero. A positive mechanical delay `delta` multiplies every component phasor by
+`exp(2i delta)`. The signal frequency is `Omega=2*omega`, from `SourceConfig`.
+
+A loaded NPZ must contain real one-dimensional `time_s` and `signal` arrays with
+matching lengths and at least three finite samples. Times must strictly increase;
+their original time zero is preserved. For example, an external single-source
+record can be saved with `np.savez("input.npz", time_s=times, signal=values)`.
+Loaded data require explicit `--angles`; supply the correct `--distance` and
+`--rotor-delay-rad` when they differ from the defaults. Model metadata, when
+present, must match; NPZ files produced by this script also check geometry and
+rotor delay. The existing array-run `spectrum.npz` is not a single-source input.
+`--duration` and `--sample-rate` apply only to generated records.
+
+The field decomposition groups explicit derivatives at retarded time `u=t-r/c`:
+`Q`, `Qdot`, `Qddot`, `Q3`, `Q4`, scaling respectively as
+`G Q/r^5`, `G Qdot/(c r^4)`, through `G Q4/(c^4 r)`. Every piece retains
+`exp(ikr)` and passes through the same finite-arm, ideal free-mass Michelson
+response. Thus the output `qdot_model` is the **model-predicted Qdot contribution
+to the detector strain**, not the source's quadrupole derivative in kg m²/s.
+The other four modeled terms are summed into `remaining_model`.
+
+For uniform whole-period records, sine/cosine orthogonality gives the peak
+coefficients `a=2*mean(signal*cos(Omega*time_s))` and
+`b=2*mean(signal*sin(Omega*time_s))`. Otherwise the script jointly fits sine,
+cosine and a constant to account for finite-window/DC leakage. Nonuniform records
+use equal sample weights. In the project's `exp(-i Omega t)` convention the
+recovered phasor is `a+i*b`; the reconstruction includes the fitted DC offset.
+Each modeled component is also projected to verify its phasor and phase sign.
+
+**The total sine quadrature does not isolate Qdot.** All five physical terms
+share the same frequency, and a rotating quadrupole contains both sine and cosine
+components. This script assumes the source parameters, geometry, timing and rotor
+phase are known. It compares that physical model with measured quadratures; it
+does not infer five independent amplitudes from two Fourier coefficients.
+
+By default, `runs/qdot-extraction/` receives:
+
+- `report.json`: configuration, geometry, timing, modeled phasors, recovered
+  quadratures, fit residuals, input/model agreement and integration accuracy.
+- `signals.npz` and `signals.csv`: original times and input signal, model total,
+  Qdot prediction, remaining terms, fitted signal, reconstructed cosine/sine
+  quadratures, residuals, and all five component signals and fits. The NPZ also
+  contains model and geometry metadata and can be used as a subsequent input.
+- `comparison.png`: input/fit/model comparison, Qdot prediction and its
+  projection, and the remaining modeled signal and input/model residual.
+
+All amplitudes are peak dimensionless strains, not ASD or FFT magnitudes. The
+individual components are additive diagnostics of one detector observable.
+Array processing and suspended/cavity detector dynamics are outside this script.
+
+## Qdot SNR versus arm length
+
+```bash
+python scripts/sweepQdotArmLength.py
+python scripts/sweepQdotArmLength.py --min-length 100 --max-length 59000 \
+  --points 121 --observation-years 1 --output-dir runs/qdot-arm-length
+python scripts/sweepQdotArmLength.py --min-length 100 --max-length 40000 \
+  --angles 1.5707963267948966 1.5707963267948966 0 0
+```
+
+The reusable kernel is `ghe.qdot_scaling.sweep_qdot_arm_lengths(lengths_m, ...)`;
+`QdotArmLengthStudy.evaluate(arm_length_m)` evaluates one length and caches its
+result. By default, a deterministic multistart search optimizes source direction
+and rotor-axis orientation for **the Qdot component** at each arm length.
+`--angles` instead keeps those four angles fixed. Neither mode overwrites the
+shared geometry cache or the input configuration files.
+
+This study preserves the configured `R/L` ratio (currently 1.5), the 30 km mirror
+curvatures, and all rotor, mirror, optical-power, squeezing, pressure and
+temperature parameters. Length-dependent beam sizes and noise are recalculated.
+The analytic SR detuning is retuned to the rotor's signal frequency at each
+length. The statistic for one rotor is
+
+$$
+\rho_{\dot Q}=|H_{\dot Q}|\sqrt{\frac{T}{S_{\rm quantum}^{\rm analytic}
+  +S_{\rm thermal}^{\rm GWINC}+S_{\rm gas}^{\rm GWINC}}}.
+$$
+
+These are one-sided PSDs, added once. Notebook gas comparisons and the GWINC
+quantum curve are not included. The default coherent observation is one year;
+changing its duration scales SNR as the square root without changing the optimum.
+The thermal/gas API accepts `arm_length_m` and `frequency_hz` overrides in memory,
+allowing exact-frequency evaluation without recomputing an entire plotted spectrum.
+
+The default logarithmic search is 100 m to 59 km. Interior sampled maxima are
+refined in log arm length, and both endpoints participate in the comparison.
+The report distinguishes an interior maximum from a maximum at the chosen lower
+or upper bound. It does not turn a lower-bound result into a claim of an
+unconstrained optimum. Shortening the arms also moves the source closer; this is
+a coupled detector/source-placement study, not a fixed-distance detector sweep.
+
+Expected optical exclusions are recorded: unstable cavities, the exactly
+confocal configuration that GWINC cannot evaluate, and aperture clipping greater
+than the configured mirror-loss budget. For the current equal 30 km curvatures,
+the exact 30 km case is excluded. Excess beam clipping also excludes some long
+arms before the formal 60 km stability boundary. Other numerical failures abort
+the calculation instead of silently disappearing from the results.
+
+`runs/qdot-arm-length/` contains `qdot_arm_length.csv`, `qdot_arm_length.json`, and
+`qdot_arm_length.png`. The JSON preserves source and detector parameters, input
+hashes, rejected cases, refined peaks, component phasors, noise PSDs, optimizer
+and integration diagnostics, closest source-arm clearance and `qdot_over_q_amplitude`.
+The plot shows SNR, Qdot peak strain and the three noise contributions.
+
+With the current configuration, the best found point is the 100 m lower bound,
+with `R=150 m` and one-year `rho_Qdot` about 22.08. It assumes exact subtraction of
+all other derivative terms and ideal free-mass response. At short separations,
+omitted source multipoles, supports and mechanical coupling need separate
+validation before interpreting this component SNR as an experimental detection.
+
 ## Thermal and residual-gas estimates
 
 Run one complete detector YAML per report. Each run reads `configs/source.yaml`
@@ -58,8 +186,11 @@ The command selects GWINC's CE2silicon or aLIGO budget from `+inherit` (the
 GWINC default is aLIGO). It calculates only suspension, coating, substrate, and
 residual-gas terms. CE2's nested `ITMThermoRefractive` term is included; aLIGO
 has no such term, so its matching CSV column is zero. A resolved numerical SR
-phase is passed to GWINC when `Optics.SRM.Tunephase` is `null`. The squeezer
-from the selected detector YAML is retained. No quantum, seismic, or
+phase is passed to GWINC when `Optics.SRM.Tunephase` is `null`. GWINC's
+`Tunephase` is `pi - 2 phi_SR` for the analytic Buonanno--Chen detuning
+angle; an explicit numerical
+YAML value is read with that convention. The squeezer from the selected
+detector YAML is retained. No quantum, seismic, or
 Newtonian terms are included in these totals, so the plotted curves are not
 full detector sensitivity curves.
 
@@ -99,8 +230,60 @@ default). `Noise.Estimation.TargetFrequency: null` selects
 value inserts that frequency into the grid but does not change automatic SR
 detuning. `Noise.Estimation.GasAllowanceASD` remains the paper's conditional
 `4.50e-27 Hz^-1/2` reference; it is not a CE2 allocation or a derived CE2
-requirement. `Noise.Model` and `Noise.SqueezingDB` still control the project's
-analytic SNR model and do not overwrite the detector YAML's GWINC squeezer.
+requirement. `Noise.Model` selects the project's analytic SNR model.
+The default nominal squeezing level for both SNR and the quantum comparison
+comes from `Squeezer.AmplitudedB` in the selected detector YAML. The analytic
+model uses that dB level as an ideal reduction. The quantum comparison applies
+the same ideal reduction to its unsqueezed GWINC curve; it does not model the
+CE2 filter cavity in that figure. An explicit
+`NoiseConfig(squeeze_db=...)` or quantum-figure `--squeeze-db` overrides the
+level for one run. `configs/source.yaml` has no second squeezing setting.
+
+## Quantum-noise comparison
+
+```bash
+python scripts/quantumNoise.py
+python scripts/quantumNoise.py --squeeze-db 12 \
+  --output runs/quantum-12db.png
+python scripts/quantumNoise.py --target-frequency-hz 700 \
+  --output runs/quantum-700hz.png
+```
+
+The blue curve loads `configs/CE2silicon.yaml` through GWINC, sets the SRM
+transmittance to 1 and tune phase to 0, calculates the unsqueezed quantum
+noise with GWINC's finite-arm strain calibration, and multiplies its ASD by
+`10**(-dB/20)`. This ideal frequency-dependent squeezing rule also scales
+GWINC's loss contributions; the blue curve is a modified CE2 optical
+comparison, not the official CE2 sensitivity or its physical filter-cavity
+prediction. GWINC 0.6.2's full quantum budget has a missing phase subterm at
+exactly zero squeezing, so the script sums its direct quantum vacuum terms
+once and applies the same strain calibration as the budget.
+
+The purple curve uses the same CE2 GWINC optics with the hybrid SRM
+transmittance and cavity length from `configs/detector.yaml`. GWINC has no
+resonance-frequency field: its `Optics.SRM.Tunephase` rotates the SR cavity
+quadratures, while GWINC also propagates the sidebands through that cavity.
+The script varies `Tunephase` until GWINC's quantum PSD has zero frequency
+slope and positive curvature at the source GW frequency. It finds that
+phase using the unsqueezed GWINC calculation, then applies the same ideal
+`10**(-dB/20)` ASD multiplier. For the default 600 Hz target, the solved
+GWINC `Tunephase` is about `0.01142099 rad`; the analytic phase cannot be
+copied directly because the two models have different optical transfer
+calculations.
+
+Orange uses the simple analytic model without signal recycling. Green uses
+the analytic model with the hybrid SRM and its source-frequency detuning.
+All four curves use the same ideal squeezing level. By default,
+`--detector-config configs/detector.yaml` supplies the analytic parameters
+and the shared `Squeezer.AmplitudedB`, while
+`--gwinc-config configs/CE2silicon.yaml` supplies both GWINC curves' optical
+parameters. `--t-srm` and `--length-sr` change the green and purple curves;
+blue and orange remain no-SR references. `--target-frequency-hz` retunes both
+detuned curves for one run, otherwise the target follows the source YAML.
+The script prints the solved GWINC phase and all four ASDs at the target.
+At 600 Hz with the current files these are about `1.11e-24` (blue),
+`1.87e-25` (purple), `1.10e-24` (orange), and `3.49e-27 Hz^-1/2` (green).
+The tuned GWINC dip remains substantially shallower than the analytic one.
 
 Thermal components are summed in PSD, then converted to ASD. GWINC gas
 scattering and damping sum over the four species exactly once. `ThermalPlusGas`
