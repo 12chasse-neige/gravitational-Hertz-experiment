@@ -357,7 +357,7 @@ def main() -> None:
     )
 
     # Keep the FFT normalization inherited from the original scripts. The saved
-    # arrays are consumed by both the compatibility SNR CLI and package tests.
+    # arrays are consumed by both the compatibility SNR CLI and package APIs.
     spectrum = calculate_spectrum(h_values)
     magnitude_path = run_dir / "magnitude.npy" if run_dir else TOTAL_MAGNITUDE_FILE
     freq_path = run_dir / "freqs.npy" if run_dir else TOTAL_FREQS_FILE

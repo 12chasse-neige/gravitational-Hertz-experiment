@@ -1,12 +1,11 @@
 # Current calculation workflows
 
 Activate the `ghe` environment, or use a Python installation with the dependencies
-in `requirements.txt` plus pytest. Run commands from the repository root.
+in `requirements.txt`. Run commands from the repository root.
 
 ## Verification and review
 
 ```bash
-python -m pytest -q
 python scripts/validateResponse.py --output-dir runs/validation
 ```
 
@@ -29,7 +28,7 @@ or phasor, spectrum when requested, SNR, and model metadata. Without `--run-dir`
 standard `data/` destinations remain available. The best-position cache remains
 shared and is accepted only if its source configuration and model match.
 
-## Single-source Qdot extraction with a center-retarded phase reference
+## Single-source Qdot-phase sine projection
 
 ```bash
 python scripts/extractQdot.py
@@ -42,6 +41,8 @@ python scripts/extractQdot.py --angles 0.6 0.8 0.4 0.8 \
   --output-dir runs/qdot-loaded
 python scripts/extractQdot.py --observation-years 0.25 \
   --noise-budget quantum --output-dir runs/qdot-quantum-only
+python scripts/extractQdot.py --extraction-method model-subtraction \
+  --output-dir runs/qdot-model-subtraction
 ```
 
 With no arguments, the script generates a single-source signal using the active
@@ -68,44 +69,58 @@ The field decomposition groups explicit derivatives at retarded time `u=t-r/c`:
 `exp(ikr)` and passes through the same finite-arm, ideal free-mass Michelson
 response. Thus the output `qdot_model` is the **model-predicted Qdot contribution
 to the detector strain**, not the source's quadrupole derivative in kg m²/s.
-The other four modeled terms are summed into `remaining_model`.
+The other four modeled terms are summed into `remaining_model` for comparison.
+Their values are not used by the default projection estimator.
 
-The phase reference is the rotor signal retarded to the detector center, which
-in this model is the Michelson vertex at `x=y=z=0`:
+The default `--extraction-method matched-sine` projects the full input signal
+onto a unit-amplitude sine with the same phase as the Qdot detector response.
+With `H_Qdot = A_Qdot*exp(i*theta_Qdot)` and the project's `exp(-i Omega t)`
+convention, the reference is:
 
 ```text
-psi(t) = Omega*(time_s - R/c) - 2*rotor_delay_rad
-Q reference: cos(psi)
-Qdot reference: -sin(psi)   (normalized derivative of cos(psi))
+s(t) = sin(Omega*time_s - theta_Qdot + pi/2)
+h_projected(t) = b*s(t)
 ```
 
-The script first projects the total `h(t)` onto this reference and records its
-raw quadratures. It then subtracts `remaining_model` and jointly fits
-`h(t)-remaining_model = a*cos(psi)+b*sin(psi)+offset`. The monochromatic part
-`qdot_extracted = a*cos(psi)+b*sin(psi)` estimates the Qdot contribution in the
-supplied data; the nuisance DC offset is excluded. Both quadratures are kept
-because rotor orientation and the finite-arm response can rotate the detector
-Qdot phase away from the simple center derivative reference. The report also
-records `-b` before and after subtraction, exposing contamination of that
-derivative reference by the other modeled terms.
+Only the Qdot **phase** is taken from the model; its amplitude and the remaining
+model amplitudes do not enter the estimator. `--qdot-phase-rad THETA` supplies a
+known detector phasor phase explicitly. This phase includes the timing reference
+and any rotor delay; no additional propagation/rotor phase is applied to it.
+The measured signed sine coefficient is saved as `signed_sine_coefficient`.
+Its absolute value is the projected peak amplitude. `qdot_extracted` is retained
+as the array name for this selected estimate, and `qdot_sine_projection` names
+the same waveform explicitly.
 
-For uniform whole-period records, orthogonality gives `a=2*mean(h*cos(psi))`
-and `b=2*mean(h*sin(psi))`. Otherwise a joint sine/cosine/DC least-squares fit
-accounts for finite-window leakage; nonuniform samples receive equal weights.
-In the project's `exp(-i Omega t)` convention the reception-time phasor is
-`H=(a+i*b)*exp(i*(Omega*R/c+2*rotor_delay_rad))`. Changing the reference never
-shifts the original timestamps or adds another propagation delay to the field.
-The original unshifted `signal_projection` and modeled-component fits are also
-retained for compatibility and phase verification.
+For uniform whole-period records, `sqrt(2)*s(t)` has unit norm under the
+sample-mean inner product, and the peak coefficient is `b=2*mean(h*s)`.
+Otherwise a joint cosine/sine/DC least-squares fit estimates the orthogonal
+cosine coefficient and DC offset directly from the data, accounting for
+finite-window overlap without using a physical remaining-term model. Nonuniform
+samples receive equal weights. Only the sine quadrature is retained in the
+projected waveform. Original timestamps remain unchanged.
 
-**Phase matching alone does not isolate Qdot.** All five terms share a frequency.
-The extracted Qdot and its SNR assume the other four modeled contributions are
-known and subtracted exactly. Model error or a coherent unmodeled signal can
-bias the extracted coefficients; this is conditional model-assisted extraction.
+Identification of this projection with Qdot assumes **Q and Qddot are orthogonal
+to the Qdot-phase sine and Q3/Q4 are negligible**. This assumption is approximate
+for a general finite-arm detector response. The complete input signal is kept;
+higher derivatives are not artificially removed. The report lists each modeled
+term's phase overlap `cos(arg(H_term)-theta_Qdot)` and signed projected amplitude.
+These diagnostics are not subtracted or used to correct the estimate. A small
+phase overlap can still cause appreciable contamination when the other term is
+much larger than Qdot.
+
+`--extraction-method model-subtraction` retains the previous estimator: it
+subtracts `remaining_model`, then fits both quadratures of the residual using
+`psi=Omega*(time_s-R/c)-2*rotor_delay_rad`. That mode assumes the other four
+modeled contributions are known exactly. The original unshifted total-signal
+fits, center-retarded reference, and modeled-component fits remain available
+in either mode for comparison.
 
 SNR uses peak amplitudes and the one-sided strain-noise PSD at `f_gw`:
 `rho = abs(H)*sqrt(T_obs/S_h(f_gw))`, separately for the fitted total signal,
-extracted Qdot, and modeled Qdot. `--observation-years` sets `T_obs` (default one
+selected projection/extraction, and modeled Qdot. The default projected SNR is
+recorded as `rho_sine_projection`; `rho_qdot` is retained as an alias for the
+selected estimator's SNR, subject to its stated assumptions. The CLI labels it
+as a sine projection. `--observation-years` sets `T_obs` (default one
 year), independently of the short `--duration` record used for fitting/plotting.
 The default `--noise-budget quantum-thermal-gas` sums the configured analytic
 quantum PSD, GWINC thermal PSD, and GWINC residual-gas PSD once, as in the Qdot
@@ -116,18 +131,19 @@ noise components, detector parameters, and coherent-observation assumptions.
 By default, `runs/qdot-extraction/` receives:
 
 - `report.json`: configuration, geometry, timing, modeled phasors, recovered
-  quadratures, retarded reference, conditional Qdot extraction, SNR, fit
+  quadratures, references, selected estimator, model overlap diagnostics, SNR, fit
   residuals, input/model agreement and integration accuracy.
-- `snr.json`: Qdot/total coherent SNR, observation time, noise PSD components,
+- `snr.json`: projected/modeled-Qdot/total coherent SNR, observation time, noise PSD components,
   selected configurations, amplitude uncertainty, and assumptions.
 - `signals.npz` and `signals.csv`: original times and input signal, model total,
   Qdot prediction, remaining terms, fitted signal, reconstructed cosine/sine
-  quadratures, retarded reference curves, signal after modeled subtraction,
-  extracted Qdot, residuals, and all five component signals and fits. The NPZ
+  quadratures, references, selected projected waveform, residuals, and all five
+  component signals and fits. Only model-subtraction mode includes the signal
+  after modeled subtraction. The NPZ
   contains model, geometry, and reference metadata and supports subsequent input.
-- `comparison.png`: total and extracted Qdot on a common strain scale, extracted
-  versus modeled Qdot in detail, and separately normalized curves compared with
-  the center-retarded derivative reference. The plot includes Qdot/total SNR.
+- `comparison.png`: total and the selected estimate on a common strain scale,
+  estimate versus modeled Qdot in detail, and separately normalized curves
+  compared with the selected phase reference. The plot includes projected/total SNR.
 
 All amplitudes are peak dimensionless strains, not ASD or FFT magnitudes. The
 individual components are additive diagnostics of one detector observable.
@@ -350,9 +366,58 @@ At 600 Hz with the default CE2 hybrid, the expected thermal ASD is about
 The conditional notebook beam-tube pressure ceiling is about `1.98e-9 Pa`,
 compared with the configured nominal total `5.33e-8 Pa`. The historical
 `paper/thermalConstraint/sweepTemperature.py` retains its explicit aLIGO
-reference and is not a CE2 temperature requirement. `noiseAnalysis.py` and
-other SNR commands still use `ghe/noise.py`'s analytic quantum model; they do
-not read `thermal_gas.csv`.
+reference and is not a CE2 temperature requirement.
+
+`noiseAnalysis.py` defaults to `quantum-thermal-gas`: the selected analytic
+quantum PSD plus `ThermalTotal` and GWINC `ResidualGas` from the same calculation
+as `estimateThermalGas.py`. It evaluates those terms directly on the SNR's FFT
+frequency bins; it does not require a saved `thermal_gas.csv`. Contributions sum
+as PSDs, so the combined ASD is `sqrt(quantum_psd + thermal_psd + gas_psd)`.
+Squeezing reduces only the quantum term. Notebook gas comparison curves and the
+conditional gas allowance are excluded, as are seismic and Newtonian noise.
+
+```bash
+python scripts/noiseAnalysis.py
+python scripts/noiseAnalysis.py --noise-budget quantum
+```
+
+The same option works for generated, saved and in-memory spectra through
+`scripts.noiseAnalysis.calculate_snr(..., noise_budget="quantum")` or
+`calculate_snr_from_arrays(..., noise_budget="quantum")`. The combined budget
+is the default for both functions. The analytic quantum model and squeezing
+override remain selectable through `noise_config=NoiseConfig(...)`.
+
+Thermal/gas materials, mirror geometry, temperatures and pressures use the active
+detector YAML. Runtime `DetectorConfig` arm length, test mass and optical fields
+override their corresponding YAML fields in a private copy; mirror geometry and
+curvatures remain fixed. Other SNR entry points retain their existing defaults;
+the core `ghe.snr` functions accept `noise_budget="quantum-thermal-gas"` explicitly.
+
+### Plot the SNR noise curves
+
+```bash
+python scripts/plotNoiseBudget.py
+python scripts/plotNoiseBudget.py --freq-min 10 --freq-max 1000 \
+  --output runs/noise-budget/snr_noise.png
+```
+
+The script saves both a 600 dpi PNG and a vector PDF. Its first panel shows the
+selected analytic quantum ASD, total thermal ASD, total GWINC residual-gas ASD,
+and their PSD-summed total. The second shows all available thermal components
+and gas scattering/damping. Zero-valued components are omitted from logarithmic
+axes. It uses the same STIX typography, color palette, line styles, and light
+grids as `quantumNoise.py`.
+
+The default range is the SNR frequency band in `source.yaml`. Extra samples on
+both sides of the source frequency resolve the narrow analytic SR dip. GWINC
+quantum noise, notebook gas comparisons, the reference allowance, seismic and
+Newtonian noise are excluded. The script prints every plotted contribution's
+ASD at the source frequency when that frequency is inside the requested range.
+
+`--detector-config` selects a complete detector YAML for both analytic quantum
+and GWINC thermal/gas terms. `--noise-model` selects the analytic quantum model,
+and `--squeeze-db` overrides only its ideal squeezing. `--points` controls the
+logarithmic grid, and `--show` also opens the figure interactively.
 
 ## Individual tools
 
@@ -396,6 +461,6 @@ array/spectrum inputs raise a regeneration error. Default input selection skips
 an obsolete NPZ in favor of a compatible CSV.
 
 The former `nearFieldResponse.py`, `verifyNearFieldNewtonian.py`, and
-`singleSourceNearField.py` workflows are replaced by `validateResponse.py` and
-scientific tests. Their historical reports remain in `near-field-analysis-results.json`
+`singleSourceNearField.py` workflows are replaced by `validateResponse.py`.
+Their historical reports remain in `near-field-analysis-results.json`
 and `near-field-newtonian-check.json`; old FFT/SNR numbers are not acceptance targets.

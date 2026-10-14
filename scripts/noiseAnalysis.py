@@ -1,3 +1,4 @@
+"""Estimate SNR with analytic quantum noise and configured thermal/gas noise."""
 from __future__ import annotations
 
 if __package__ in (None, ""):
@@ -5,6 +6,8 @@ if __package__ in (None, ""):
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import argparse
 
 import numpy as np
 
@@ -19,6 +22,7 @@ from ghe.config import (
 from ghe.snr import calculate_snr as _calculate_snr
 from ghe.snr import calculate_snr_from_arrays as _calculate_snr_from_arrays
 from ghe.spectrum import Spectrum, calculate_spectrum, save_spectrum_arrays
+from ghe.noise import NOISE_BUDGETS
 from scripts.fourier import build_default_signal, plot
 
 
@@ -64,6 +68,7 @@ def calculate_snr(
     detector_config: DetectorConfig | None = None,
     sampling_config: SamplingConfig | None = None,
     source_config: SourceConfig | None = None,
+    noise_budget: str = "quantum-thermal-gas",
     verbose: bool = True,
 ) -> float:
     """
@@ -71,10 +76,16 @@ def calculate_snr(
 
     Passing both ``magnitude_path`` and ``freq_path`` preserves the legacy
     behavior of integrating an already saved spectrum.
+
+    The default PSD sums analytic quantum noise and the thermal/residual-gas
+    terms from estimateThermalGas.py. Set noise_budget="quantum" to retain the
+    previous quantum-only estimate.
     """
 
     if (magnitude_path is None) != (freq_path is None):
         raise ValueError("magnitude_path and freq_path must be provided together.")
+    if noise_budget not in NOISE_BUDGETS:
+        raise ValueError(f"Noise budget must be one of: {', '.join(NOISE_BUDGETS)}")
 
     if magnitude_path is None:
         if verbose:
@@ -90,6 +101,7 @@ def calculate_snr(
             noise_config=noise_config,
             detector_config=detector_config,
             sampling_config=sampling_config,
+            noise_budget=noise_budget,
         )
     else:
         snr_year = _calculate_snr(
@@ -99,8 +111,10 @@ def calculate_snr(
             noise_config=noise_config,
             detector_config=detector_config,
             sampling_config=sampling_config,
+            noise_budget=noise_budget,
         )
     if verbose:
+        print(f"Noise budget: {noise_budget}")
         print(f"Calculated SNR (1 year) = {snr_year:.4e}")
     return snr_year
 
@@ -113,6 +127,7 @@ def calculate_snr_from_arrays(
     detector_config: DetectorConfig | None = None,
     sampling_config: SamplingConfig | None = None,
     source_config: SourceConfig | None = None,
+    noise_budget: str = "quantum-thermal-gas",
     verbose: bool = True,
 ) -> float:
     if source_config is not None:
@@ -125,11 +140,23 @@ def calculate_snr_from_arrays(
         noise_config=noise_config,
         detector_config=detector_config,
         sampling_config=sampling_config,
+        noise_budget=noise_budget,
     )
     if verbose:
+        print(f"Noise budget: {noise_budget}")
         print(f"Calculated SNR (1 year) = {snr_year:.4e}")
     return snr_year
 
 
+def main(argv=None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--noise-budget", choices=NOISE_BUDGETS, default="quantum-thermal-gas",
+        help="Default: quantum-thermal-gas; quantum retains the previous estimate.",
+    )
+    args = parser.parse_args(argv)
+    calculate_snr(noise_budget=args.noise_budget)
+
+
 if __name__ == "__main__":
-    calculate_snr()
+    main()

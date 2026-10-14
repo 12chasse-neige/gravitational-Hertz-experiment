@@ -30,11 +30,11 @@ Source:
   Material:
     Density: 1750.0                     # kg/m^3
   Placement:
-    DetectorDistanceArmLengths: 1.5     # source distance R / detector arm length L
+    DetectorDistanceArmLengths: 10     # source distance R / detector arm length L
 
 SourceArray:
-  NumberOfSources: 10000000
-  ChunkSize: 100000
+  NumberOfSources: 100000
+  ChunkSize: 1000
   Spacing: null                         # m; null uses 1.5 times the rotor diameter
   CenterDirection:
     Theta: null                         # rad; null uses the optimized position

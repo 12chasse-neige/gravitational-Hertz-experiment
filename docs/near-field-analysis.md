@@ -625,16 +625,19 @@ Added files:
 * `ghe/finite_distance.py`: conserved leading mass-quadrupole physical metric, coordinate acceleration, gauge-invariant tidal curvature, and two equivalent ideal Michelson calculations.
 * The former `scr/nearFieldResponse.py` diagnostic reproduced the paper benchmark, the then-current 3995 m configuration, an arm-extension example, and a fixed-arm distance sweep. Its saved historical results are in `docs/near-field-analysis-results.json`.
 * `scr/verifyNearFieldNewtonian.py`: independent analytic quadrupole and direct point-hole/finite-cylinder Newtonian calculation. Writes `docs/near-field-newtonian-check.json`.
-* `tests/test_finite_distance.py`: Newtonian, vacuum, harmonic-constraint, radiation-zone, finite-arm gauge-equivalence, short-arm, and rotor-Fourier checks.
+* The former test suite covered Newtonian, vacuum, harmonic-constraint, radiation-zone, finite-arm gauge-equivalence, short-arm, and rotor-Fourier checks.
 
-Run from the repository root:
+The original diagnostic commands were:
 
 ```bash
 conda activate gravitational-Hertz-experiment
 python scr/nearFieldResponse.py
 python scr/verifyNearFieldNewtonian.py
-python -m pytest tests/test_finite_distance.py tests/test_near_field.py tests/test_metric_smoke.py tests/test_snr.py tests/test_spectrum.py -q
 ```
 
-The direct integral offers `--quick` for one quadrature setting and `--extended` for a third. Both scripts offer output-path overrides and use the saved geometry when present; if the ignored cache is absent, they use and identify the embedded angle snapshot in (37). Source and detector parameters are read from the current configuration, and recorded with the outputs. The paper benchmark deliberately uses the source/optical parameters available on the analysis date; future configuration changes will alter numerical results.
+The diagnostic scripts and test suite have since been removed. For the maintained
+validation workflow, activate `ghe` and run
+`python scripts/validateResponse.py --output-dir runs/validation`.
+
+The historical direct integral offered `--quick` for one quadrature setting and `--extended` for a third. Both scripts offered output-path overrides and used the saved geometry when present; if the ignored cache was absent, they used and identified the embedded angle snapshot in (37). Source and detector parameters were read from the configuration and recorded with the outputs. The paper benchmark deliberately uses the source/optical parameters available on the analysis date; future configuration changes will alter numerical results.
 

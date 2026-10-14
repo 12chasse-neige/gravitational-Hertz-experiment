@@ -11,6 +11,9 @@ The SNR code needs a one-sided strain-noise power spectral density (PSD)
 
 Functions return PSD values, not amplitude spectral density.  Plotting code may
 take square roots when it wants ASD units.
+
+``get_noise_budget_psd`` optionally adds the configured GWINC thermal and
+residual-gas estimates to the analytic quantum PSD.
 """
 
 from __future__ import annotations
@@ -59,6 +62,7 @@ def _precompute_noise_coeffs(
 
 DEFAULT_NOISE_MODEL = "frequency_dependent_squeezed"
 DETUNED_SIGNAL_RECYCLING_NOISE_MODEL = "detuned_signal_recycling"
+NOISE_BUDGETS = ("quantum", "quantum-thermal-gas")
 
 _NOISE_MODEL_ALIASES = {
     DEFAULT_NOISE_MODEL: DEFAULT_NOISE_MODEL,
@@ -289,3 +293,46 @@ def get_noise_psd(
             config=active_detector,
         )
     raise AssertionError(f"Unhandled normalized noise model: {active_model}")
+
+
+def get_noise_budget_psd(
+    freq: float | np.ndarray,
+    *,
+    noise_budget: str = "quantum-thermal-gas",
+    noise_config: NoiseConfig | None = None,
+    detector_config: DetectorConfig | None = None,
+) -> np.ndarray:
+    """Return quantum-only or quantum + thermal + residual-gas strain PSD.
+
+    The combined budget reuses the calculation behind estimateThermalGas.py,
+    evaluated at the requested frequencies without interpolation. Only its
+    ThermalTotal and ResidualGas PSDs are added, once each. Notebook gas
+    comparisons and the reference allowance are excluded. Squeezing applies
+    only to quantum noise.
+
+    Thermal materials, mirror geometry, temperatures and gas pressures come
+    from the active detector YAML. Runtime DetectorConfig fields override the
+    corresponding YAML parameters in a private copy.
+    """
+    if noise_budget not in NOISE_BUDGETS:
+        raise ValueError(f"Noise budget must be one of: {', '.join(NOISE_BUDGETS)}")
+    active_detector = detector_config or DetectorConfig()
+    quantum = get_noise_psd(
+        freq, noise_config=noise_config, detector_config=active_detector
+    )
+    if noise_budget == "quantum":
+        return quantum
+
+    from .thermal_gas import calculate_thermal_gas
+
+    frequencies = np.asarray(freq, dtype=float)
+    flat_frequency = np.atleast_1d(frequencies).ravel()
+    result = calculate_thermal_gas(
+        frequency_hz=flat_frequency,
+        runtime_detector=active_detector,
+    )
+    # The estimator sorts/uniques its grid and includes the reporting target.
+    # Recover the caller's original order, duplicate bins and array shape.
+    indices = np.searchsorted(result.frequency_hz, flat_frequency)
+    thermal_gas = result.spectra_psd["ThermalPlusGas"][indices]
+    return quantum + thermal_gas.reshape(frequencies.shape)

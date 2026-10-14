@@ -85,11 +85,12 @@ with the new model. Geometry text now preserves 17 significant digits.
 
 The scripts directory is `scripts/`; `SCR_DIR` remains only a path alias. Deleted
 low-level TT/incomplete-metric functions have no compatibility backend. Independent
-Newtonian mass quadrature and the old time-domain hole moment now live under
-`tests/support/`. The maintained validation command replaces temporary diagnostics.
+Newtonian mass quadrature and the old time-domain hole moment were kept in the
+former test suite, which has since been removed. The maintained validation command
+replaces temporary diagnostics.
 NPZ remains an in-memory format; streaming CSV is the supported large-array path.
 
-## Verification record and known limits
+## Historical verification record and known limits
 
 The usable local environment was `ghe` (Python 3.13). The initial full test run
 stopped at four missing `scr` imports. Once collection worked, the old resonance
@@ -104,16 +105,16 @@ approximately 1.93584722024e-32 and 2.02610052329e-30. The independent harmonic 
 curvature implementations agree far below the requested integration tolerance.
 The 1/10/100-source examples compare direct monochromatic SNR to a bin-aligned FFT.
 
-The tests also check the independent finite cylindrical-hole Newtonian integral,
+The former tests also checked the independent finite cylindrical-hole Newtonian integral,
 which contains higher source multipoles and therefore agrees with the leading
 quadrupole only within finite-size errors. Default absolute floating-point
 assertion tolerances are not used to validate tiny strains.
 
-Final verification: **76 tests passed** (`python -m pytest -q`), undefined-name
+Verification at integration time: **76 tests passed**, undefined-name
 and duplicate-definition checks passed, and `git diff --check` was clean. The
 arm-length plotting CLI also completed at 2000 m and 4000 m.
 
-The test suite exercises actual CSV and NPZ CLI runs, mass/length sweeps, array
+The former test suite exercised actual CSV and NPZ CLI runs, mass/length sweeps, array
 sweeps, and validation reports in temporary output directories. Small timings
 exclude a ten-million-source performance claim. Array phase generation and later
 signal evaluation each integrate a source once; responses are not persisted as a

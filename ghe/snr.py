@@ -23,7 +23,7 @@ import numpy as np
 from .config import DetectorConfig, NoiseConfig, SamplingConfig, SourceConfig
 from .artifacts import model_metadata, read_metadata, validate_metadata, file_digest
 from dataclasses import asdict
-from .noise import get_noise_psd
+from .noise import get_noise_budget_psd
 from .paths import FREQS_FILE, MAGNITUDE_FILE, YEAR_SECONDS
 
 
@@ -58,12 +58,14 @@ def calculate_snr_from_arrays(
     detector_config: DetectorConfig | None = None,
     sampling_config: SamplingConfig | None = None,
     noise_psd_func: Callable[[np.ndarray], np.ndarray] | None = None,
+    noise_budget: str = "quantum",
 ) -> float:
     """
     Calculate 1-year SNR from in-memory spectrum arrays.
 
-    ``noise_psd_func`` is injectable for tests and model comparisons.  When it is
-    omitted, the package uses the model selected by ``NoiseConfig.model``.
+    ``noise_psd_func`` is injectable for model comparisons.  When it is
+    omitted, ``noise_budget`` selects quantum-only or quantum + thermal + gas,
+    with the quantum model selected by ``NoiseConfig.model``.
     ``sampling_config`` is accepted for API compatibility; duration is inferred
     from ``freq`` so the spectrum stays self-consistent.
     """
@@ -86,8 +88,9 @@ def calculate_snr_from_arrays(
         )
 
     if noise_psd_func is None:
-        total_noise_psd = get_noise_psd(
+        total_noise_psd = get_noise_budget_psd(
             freq_valid,
+            noise_budget=noise_budget,
             noise_config=active_noise,
             detector_config=active_detector,
         )
@@ -111,6 +114,7 @@ def calculate_snr(
     detector_config: DetectorConfig | None = None,
     sampling_config: SamplingConfig | None = None,
     source_config: SourceConfig | None = None,
+    noise_budget: str = "quantum",
 ) -> float:
     """Load legacy spectrum arrays from disk and calculate 1-year SNR."""
 
@@ -134,6 +138,7 @@ def calculate_snr(
         noise_config=noise_config,
         detector_config=detector_config,
         sampling_config=sampling_config,
+        noise_budget=noise_budget,
     )
 
 
@@ -173,6 +178,7 @@ def calculate_snr_from_phasor(
     *,
     noise_config: NoiseConfig | None = None,
     detector_config: DetectorConfig | None = None,
+    noise_budget: str = "quantum",
 ) -> float:
     """
     Estimate the 1-year SNR from a monochromatic phasor sum.
@@ -200,8 +206,9 @@ def calculate_snr_from_phasor(
     ):
         raise ValueError("Signal frequency is outside the configured SNR band")
     freq = np.array([gw_frequency_hz], dtype=float)
-    noise_psd = get_noise_psd(
+    noise_psd = get_noise_budget_psd(
         freq,
+        noise_budget=noise_budget,
         noise_config=active_noise,
         detector_config=active_detector,
     )

@@ -34,15 +34,13 @@ this calculation.
 | `ghe/thermal_gas.py`, `ghe/residual_gas.py` | Focused GWINC thermal/gas estimate and notebook gas comparisons |
 | `ghe/artifacts.py` | Model provenance and saved-data compatibility |
 | `scripts/`, `main.py` | Command-line entry points |
-| `tests/support/` | Independent Newtonian and time-domain reference calculations |
 
 ## Environment and verification
 
 ```bash
 conda create -n ghe python=3.13
 conda activate ghe
-python -m pip install -r requirements.txt pytest
-python -m pytest -q
+python -m pip install -r requirements.txt
 python scripts/validateResponse.py --output-dir runs/validation
 ```
 
@@ -59,9 +57,27 @@ python scripts/estimateThermalGas.py --config configs/detector.yaml \
 This writes `thermal_gas.csv`, `.json`, and `.png` in the selected output
 directory. The default detector is a CE2 silicon hybrid with GHE's signal
 recycling settings. Separate runs can use `configs/aLIGO.yaml` or
-`configs/CE2silicon.yaml` for comparison. The estimates do not change the
-analytic noise model used by existing SNR commands. See the
+`configs/CE2silicon.yaml` for comparison. `scripts/noiseAnalysis.py` now adds
+these thermal and GWINC residual-gas PSDs to its analytic quantum PSD by default:
+
+```bash
+python scripts/noiseAnalysis.py
+python scripts/noiseAnalysis.py --noise-budget quantum
+```
+
+The second command retains the quantum-only estimate. Other SNR entry points
+keep their existing defaults. See the
 [thermal/gas workflow](docs/current-workflows.md#thermal-and-residual-gas-estimates).
+
+Plot the SNR budget and its individual thermal/gas contributions, using the
+analytic quantum model in place of GWINC quantum noise:
+
+```bash
+python scripts/plotNoiseBudget.py
+```
+
+This saves `paper/figures/SNR Noise Budget.png` and a matching vector PDF with
+the same typography and colors as the quantum-noise comparison figure.
 
 ## Small end-to-end run
 

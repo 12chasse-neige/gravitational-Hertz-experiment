@@ -8,7 +8,7 @@ to the GWINC gas or thermal-plus-gas totals.
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -109,7 +109,8 @@ class ThermalGasResult:
 
 def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
                           source_config=SOURCE_CONFIG_FILE,
-                          arm_length_m=None, frequency_hz=None) -> ThermalGasResult:
+                          arm_length_m=None, frequency_hz=None,
+                          runtime_detector: DetectorConfig | None = None) -> ThermalGasResult:
     """Read YAML afresh and evaluate only GWINC thermal and gas budget terms.
 
     ``+inherit`` selects the GWINC budget family. In GWINC, an omitted marker
@@ -122,6 +123,11 @@ def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
     frequency_hz optionally supplies a small calculation grid for parameter
     sweeps; the exact reporting target is always included. Neither option
     modifies the source files or the default full-spectrum reporting behavior.
+
+    runtime_detector synchronizes the effective arm length, test mass and
+    optical parameters with an SNR calculation. YAML-only material, geometry,
+    temperature and pressure settings remain fixed. arm_length_m, if supplied,
+    takes precedence over runtime_detector.length.
     """
     import gwinc
     from gwinc import Struct
@@ -132,6 +138,21 @@ def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
     source_path = resolve_config_path(source_config)
     detector = deepcopy(dict(_read_yaml(detector_path)))
     source = deepcopy(dict(_read_yaml(source_path)))
+    auto_phase_requested = at(detector, 'Optics', 'SRM', 'Tunephase') is None
+    if runtime_detector is not None:
+        detector['Infrastructure']['Length'] = runtime_detector.length
+        detector['Suspension']['Stage'][0]['Mass'] = runtime_detector.testmass
+        detector['Laser'].update(Wavelength=runtime_detector.wavelength,
+                                 Power=runtime_detector.power)
+        optics = detector['Optics']
+        optics['Loss'] = runtime_detector.loss_mirror_ppm * 1e-6
+        optics['BSLoss'] = runtime_detector.loss_BS_ppm * 1e-6
+        for mirror in ('PRM', 'ITM', 'ETM', 'SRM'):
+            optics[mirror]['Transmittance'] = getattr(runtime_detector, 'T_' + mirror)
+        optics['SRM'].update(
+            CavityLength=runtime_detector.length_SR,
+            Tunephase=gwinc_tunephase_from_analytic_phi(runtime_detector.phi_SR),
+        )
     if arm_length_m is not None:
         detector['Infrastructure']['Length'] = number(arm_length_m, 'arm_length_m')
     budget_name = detector.pop('+inherit', 'aLIGO')
@@ -139,7 +160,9 @@ def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
         raise ConfigFileError(f'Unsupported GWINC +inherit budget {budget_name!r}; use CE2silicon or aLIGO')
 
     source_frequency = physical(source, 'Source', 'Rotor', 'AngularVelocity') / np.pi
-    auto_phase_requested = at(detector, 'Optics', 'SRM', 'Tunephase') is None
+    if runtime_detector is not None:
+        source_frequency = number(runtime_detector.resonance_frequency_hz,
+                                  'runtime_detector.resonance_frequency_hz')
     detector_fields = _detector_defaults_from_yaml(detector, detector_path)
     for key in ('testmass', 'length', 'length_SR', 'wavelength', 'power'):
         number(detector_fields[key], key)
@@ -259,6 +282,9 @@ def calculate_thermal_gas(*, detector_config=DETECTOR_CONFIG_FILE,
         'detector_config_path': str(detector_path),
         'source_config_path': str(source_path),
         'arm_length_override_m': None if arm_length_m is None else float(arm_length_m),
+        'runtime_detector_overrides': (
+            asdict(runtime_detector) if runtime_detector is not None else None
+        ),
         'gwinc_version': gwinc.__version__,
         'gwinc_budget_class': budget_name,
         'computed_gwinc_terms': list(selected),

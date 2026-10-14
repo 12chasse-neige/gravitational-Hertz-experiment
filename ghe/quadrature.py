@@ -32,6 +32,46 @@ class QuadratureFit:
         return complex(self.cosine, self.sine) * np.exp(1j * self.reference_phase_rad)
 
 
+@dataclass(frozen=True)
+class SineProjection:
+    """One signed sine quadrature, with cosine/DC estimated from data only."""
+
+    fit: QuadratureFit
+    reference: np.ndarray
+
+    @property
+    def coefficient(self) -> float:
+        """Peak coefficient multiplying the unit-amplitude sine reference."""
+        return self.fit.sine
+
+    @property
+    def phasor(self) -> complex:
+        return 1j * self.coefficient * np.exp(1j * self.fit.reference_phase_rad)
+
+    @property
+    def waveform(self) -> np.ndarray:
+        return self.coefficient * self.reference
+
+
+def project_sine(time_s, signal, angular_frequency, *, phasor_phase_rad) -> SineProjection:
+    """Project input onto a sine aligned with a known exp(-i Omega t) phase.
+
+    If H=A*exp(i theta), its waveform is A*sin(Omega*t-theta+pi/2).
+    The reference is unit amplitude; sqrt(2) times this reference is unit norm
+    on a whole-period record under the sample-mean inner product. Accordingly,
+    the returned peak coefficient is 2*mean(signal*reference) on such a grid.
+    On other grids, a joint cosine/sine/DC fit removes finite-window overlap
+    using nuisance coefficients estimated from the supplied data. No physical
+    component model or modeled remaining waveform enters this calculation.
+    """
+    reference_phase = phasor_phase_rad - np.pi / 2
+    fit = project_quadratures(
+        time_s, signal, angular_frequency, reference_phase_rad=reference_phase
+    )
+    reference = np.sin(angular_frequency * np.asarray(time_s) - reference_phase)
+    return SineProjection(fit, reference)
+
+
 def project_quadratures(
     time_s, signal, angular_frequency, *, reference_phase_rad=0.0
 ) -> QuadratureFit:
