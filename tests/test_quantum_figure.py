@@ -87,16 +87,23 @@ def test_detuned_gwinc_minimum_is_at_source_frequency() -> None:
     gwinc = pytest.importorskip("gwinc")
     detector = DetectorConfig.from_yaml(DETECTOR_CONFIG_FILE)
     asd, tunephase = get_gwinc_detuned_quantum_asd(
-        np.array([600.0]), detector_config=detector
+        np.array([10.0, 600.0]), detector_config=detector
     )
-    assert tunephase == pytest.approx(0.01142098753993527, rel=1e-6)
-    assert asd[0] == pytest.approx(1.8689172621615912e-25, rel=1e-5)
+    assert tunephase == pytest.approx(0.01142715189167273, rel=1e-6)
+    assert asd[1] == pytest.approx(1.8695542025700354e-25, rel=1e-5)
+    # The b2 signal response is weak off resonance in both models. Reading
+    # GWINC's b1 instead produces a spurious factor-of-50 gap near 10 Hz.
+    analytic_low = np.sqrt(
+        get_detuned_signal_recycling_noise_psd(np.array([10.0]), config=detector)[0]
+    )
+    assert 1.0 < asd[0] / analytic_low < 1.5
 
     # Find the frequency minimum independently of the slope-root tuner.
     ifo = gwinc.load_budget(str(CE2_SILICON_CONFIG_FILE)).ifo
     ifo.Optics.SRM.Transmittance = detector.T_SRM
     ifo.Optics.SRM.CavityLength = detector.length_SR
     ifo.Optics.SRM.Tunephase = tunephase
+    ifo.Optics.Quadrature.dc = 0.0
     ifo.Squeezer.AmplitudedB = 0.0
     ifo.Squeezer.Type = "None"
     minimum = minimize_scalar(
@@ -109,14 +116,19 @@ def test_detuned_gwinc_minimum_is_at_source_frequency() -> None:
     assert abs(minimum.x - 600.0) < 0.01
 
 
-def test_detuned_gwinc_retunes_when_source_frequency_changes() -> None:
+def test_detuned_gwinc_retunes_when_source_frequency_changes(tmp_path) -> None:
     pytest.importorskip("gwinc")
     detector = DetectorConfig.from_yaml(DETECTOR_CONFIG_FILE)
     retargeted = replace(detector, resonance_frequency_hz=700.0, phi_SR=None)
+    # An explicit readout in an external YAML must also be changed to b2.
+    ce_yaml = yaml.safe_load(CE2_SILICON_CONFIG_FILE.read_text())
+    ce_yaml["Squeezer"]["Readout"] = {"Type": "Homodyne", "Angle": np.pi / 2}
+    edited_path = tmp_path / "ce2-readout.yaml"
+    edited_path.write_text(yaml.safe_dump(ce_yaml))
     asd, tunephase = get_gwinc_detuned_quantum_asd(
-        np.array([699.0, 700.0, 701.0]), detector_config=retargeted
+        np.array([699.0, 700.0, 701.0]), detector_config=retargeted, ifo=edited_path
     )
-    assert tunephase == pytest.approx(0.008978185389531013, rel=1e-5)
+    assert tunephase == pytest.approx(0.008986015652592263, rel=1e-5)
     assert asd[1] < asd[0]
     assert asd[1] < asd[2]
 
@@ -131,6 +143,7 @@ def test_figure_prints_all_four_target_values(tmp_path, capsys) -> None:
     output_text = capsys.readouterr().out
     assert output.is_file()
     assert output.with_suffix(".pdf").is_file()
+    assert "GWINC detuned readout: b_2 (Optics.Quadrature.dc = 0 rad)" in output_text
     assert "GWINC tuned SRM Tunephase at 600 Hz" in output_text
     assert "GWINC CE2 no-SR ideal ASD at 600 Hz" in output_text
     assert "GWINC CE2 tuned-SR ideal ASD at 600 Hz" in output_text
@@ -177,10 +190,11 @@ def test_detector_squeezer_edit_changes_all_four_curves(tmp_path) -> None:
     changed_sr = replace(original, T_SRM=1e-4, phi_SR=None)
     changed_detuned = get_detuned_signal_recycling_noise_psd(frequency, config=changed_sr)
     assert not np.isclose(changed_detuned[0], original_detuned[0], rtol=1e-3, atol=0)
-    _, changed_phase = get_gwinc_detuned_quantum_asd(
+    changed_tuned, changed_phase = get_gwinc_detuned_quantum_asd(
         frequency, detector_config=changed_sr
     )
-    assert abs(changed_phase - original_phase) > 1e-6
+    assert not np.isclose(changed_tuned[0], original_tuned[0], rtol=1e-3, atol=0)
+    assert changed_phase != pytest.approx(original_phase, rel=0, abs=1e-9)
     np.testing.assert_allclose(
         get_gwinc_quantum_asd(frequency, squeeze_db=changed_sr.squeeze_db),
         original_gwinc,
@@ -194,6 +208,52 @@ def test_tuner_rejects_fully_transmitting_srm() -> None:
     ifo.Optics.SRM.Transmittance = 1.0
     with pytest.raises(ValueError, match="requires 0 < SRM transmittance < 1"):
         tune_gwinc_srm_phase(ifo, 600.0)
+
+
+def test_broad_srm_uses_matched_detuning_when_target_minimum_is_unavailable() -> None:
+    pytest.importorskip("gwinc")
+    detector = replace(
+        DetectorConfig.from_yaml(DETECTOR_CONFIG_FILE), T_SRM=0.5, phi_SR=None
+    )
+    frequency = np.array([10.0, 100.0, 600.0])
+    with pytest.raises(ValueError, match="no positive-detuning quantum-noise dip"):
+        get_gwinc_detuned_quantum_asd(frequency, detector_config=detector)
+
+    asd, tunephase = get_gwinc_detuned_quantum_asd(
+        frequency, detector_config=detector, sr_tuning="analytic-phase"
+    )
+    assert tunephase == pytest.approx(np.pi - 2 * detector.phi_SR, abs=1e-13)
+    analytic = np.sqrt(get_detuned_signal_recycling_noise_psd(frequency, config=detector))
+    assert np.all(np.isfinite(asd))
+    # Matching the physical detuning and b2 readout leaves small corrections
+    # from GWINC's complete optics at this broad SRM transmittance.
+    np.testing.assert_allclose(asd, analytic, rtol=0.05, atol=0)
+
+
+def test_cli_can_plot_broad_srm_with_matched_detuning(tmp_path, capsys, monkeypatch) -> None:
+    pytest.importorskip("gwinc")
+    from scripts.quantumNoise import main
+
+    output = tmp_path / "broad-srm.png"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "quantumNoise.py",
+            "--t-srm", "0.5",
+            "--gwinc-sr-tuning", "analytic-phase",
+            "--points", "24",
+            "--output", str(output),
+        ],
+    )
+    main()
+    output_text = capsys.readouterr().out
+    assert output.is_file()
+    assert output.with_suffix(".pdf").is_file()
+    assert "GWINC SR tuning: analytic-phase" in output_text
+    assert "GWINC SRM Tunephase (analytic detuning)" in output_text
+    assert "T_SRM=0.5" in output_text
+    assert "GWINC CE2 matched-detuning SR ideal ASD" in output_text
 
 
 def test_cli_can_retarget_both_detuned_curves(tmp_path, capsys, monkeypatch) -> None:

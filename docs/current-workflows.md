@@ -29,7 +29,7 @@ or phasor, spectrum when requested, SNR, and model metadata. Without `--run-dir`
 standard `data/` destinations remain available. The best-position cache remains
 shared and is accepted only if its source configuration and model match.
 
-## Single-source Qdot contribution and quadrature projection
+## Single-source Qdot extraction with a center-retarded phase reference
 
 ```bash
 python scripts/extractQdot.py
@@ -40,6 +40,8 @@ python scripts/extractQdot.py --angles 0.6 0.8 0.4 0.8 \
   --distance 6000 --rotor-delay-rad 0.2 \
   --signal-input runs/qdot-example/signals.npz \
   --output-dir runs/qdot-loaded
+python scripts/extractQdot.py --observation-years 0.25 \
+  --noise-budget quantum --output-dir runs/qdot-quantum-only
 ```
 
 With no arguments, the script generates a single-source signal using the active
@@ -68,30 +70,64 @@ response. Thus the output `qdot_model` is the **model-predicted Qdot contributio
 to the detector strain**, not the source's quadrupole derivative in kg m²/s.
 The other four modeled terms are summed into `remaining_model`.
 
-For uniform whole-period records, sine/cosine orthogonality gives the peak
-coefficients `a=2*mean(signal*cos(Omega*time_s))` and
-`b=2*mean(signal*sin(Omega*time_s))`. Otherwise the script jointly fits sine,
-cosine and a constant to account for finite-window/DC leakage. Nonuniform records
-use equal sample weights. In the project's `exp(-i Omega t)` convention the
-recovered phasor is `a+i*b`; the reconstruction includes the fitted DC offset.
-Each modeled component is also projected to verify its phasor and phase sign.
+The phase reference is the rotor signal retarded to the detector center, which
+in this model is the Michelson vertex at `x=y=z=0`:
 
-**The total sine quadrature does not isolate Qdot.** All five physical terms
-share the same frequency, and a rotating quadrupole contains both sine and cosine
-components. This script assumes the source parameters, geometry, timing and rotor
-phase are known. It compares that physical model with measured quadratures; it
-does not infer five independent amplitudes from two Fourier coefficients.
+```text
+psi(t) = Omega*(time_s - R/c) - 2*rotor_delay_rad
+Q reference: cos(psi)
+Qdot reference: -sin(psi)   (normalized derivative of cos(psi))
+```
+
+The script first projects the total `h(t)` onto this reference and records its
+raw quadratures. It then subtracts `remaining_model` and jointly fits
+`h(t)-remaining_model = a*cos(psi)+b*sin(psi)+offset`. The monochromatic part
+`qdot_extracted = a*cos(psi)+b*sin(psi)` estimates the Qdot contribution in the
+supplied data; the nuisance DC offset is excluded. Both quadratures are kept
+because rotor orientation and the finite-arm response can rotate the detector
+Qdot phase away from the simple center derivative reference. The report also
+records `-b` before and after subtraction, exposing contamination of that
+derivative reference by the other modeled terms.
+
+For uniform whole-period records, orthogonality gives `a=2*mean(h*cos(psi))`
+and `b=2*mean(h*sin(psi))`. Otherwise a joint sine/cosine/DC least-squares fit
+accounts for finite-window leakage; nonuniform samples receive equal weights.
+In the project's `exp(-i Omega t)` convention the reception-time phasor is
+`H=(a+i*b)*exp(i*(Omega*R/c+2*rotor_delay_rad))`. Changing the reference never
+shifts the original timestamps or adds another propagation delay to the field.
+The original unshifted `signal_projection` and modeled-component fits are also
+retained for compatibility and phase verification.
+
+**Phase matching alone does not isolate Qdot.** All five terms share a frequency.
+The extracted Qdot and its SNR assume the other four modeled contributions are
+known and subtracted exactly. Model error or a coherent unmodeled signal can
+bias the extracted coefficients; this is conditional model-assisted extraction.
+
+SNR uses peak amplitudes and the one-sided strain-noise PSD at `f_gw`:
+`rho = abs(H)*sqrt(T_obs/S_h(f_gw))`, separately for the fitted total signal,
+extracted Qdot, and modeled Qdot. `--observation-years` sets `T_obs` (default one
+year), independently of the short `--duration` record used for fitting/plotting.
+The default `--noise-budget quantum-thermal-gas` sums the configured analytic
+quantum PSD, GWINC thermal PSD, and GWINC residual-gas PSD once, as in the Qdot
+arm-length sweep. `--noise-budget quantum` selects quantum noise alone;
+`--noise-model` overrides the analytic quantum model. The report preserves the
+noise components, detector parameters, and coherent-observation assumptions.
 
 By default, `runs/qdot-extraction/` receives:
 
 - `report.json`: configuration, geometry, timing, modeled phasors, recovered
-  quadratures, fit residuals, input/model agreement and integration accuracy.
+  quadratures, retarded reference, conditional Qdot extraction, SNR, fit
+  residuals, input/model agreement and integration accuracy.
+- `snr.json`: Qdot/total coherent SNR, observation time, noise PSD components,
+  selected configurations, amplitude uncertainty, and assumptions.
 - `signals.npz` and `signals.csv`: original times and input signal, model total,
   Qdot prediction, remaining terms, fitted signal, reconstructed cosine/sine
-  quadratures, residuals, and all five component signals and fits. The NPZ also
-  contains model and geometry metadata and can be used as a subsequent input.
-- `comparison.png`: input/fit/model comparison, Qdot prediction and its
-  projection, and the remaining modeled signal and input/model residual.
+  quadratures, retarded reference curves, signal after modeled subtraction,
+  extracted Qdot, residuals, and all five component signals and fits. The NPZ
+  contains model, geometry, and reference metadata and supports subsequent input.
+- `comparison.png`: total and extracted Qdot on a common strain scale, extracted
+  versus modeled Qdot in detail, and separately normalized curves compared with
+  the center-retarded derivative reference. The plot includes Qdot/total SNR.
 
 All amplitudes are peak dimensionless strains, not ASD or FFT magnitudes. The
 individual components are additive diagnostics of one detector observable.
@@ -247,6 +283,8 @@ python scripts/quantumNoise.py --squeeze-db 12 \
   --output runs/quantum-12db.png
 python scripts/quantumNoise.py --target-frequency-hz 700 \
   --output runs/quantum-700hz.png
+python scripts/quantumNoise.py --t-srm 0.5 --gwinc-sr-tuning analytic-phase \
+  --output runs/quantum-t-srm-0p5/quantum_noise.png
 ```
 
 The blue curve loads `configs/CE2silicon.yaml` through GWINC, sets the SRM
@@ -260,14 +298,19 @@ exactly zero squeezing, so the script sums its direct quantum vacuum terms
 once and applies the same strain calibration as the budget.
 
 The purple curve uses the same CE2 GWINC optics with the hybrid SRM
-transmittance and cavity length from `configs/detector.yaml`. GWINC has no
-resonance-frequency field: its `Optics.SRM.Tunephase` rotates the SR cavity
+transmittance and cavity length from `configs/detector.yaml`. It selects the
+same Buonanno--Chen `b_2` output quadrature as the green analytic curve.
+GWINC projects the readout as `b_1*sin(eta) + b_2*cos(eta)`, so the script
+sets `Optics.Quadrature.dc = 0` and an explicit homodyne readout angle of 0
+before tuning. The no-SR reference retains its configured phase readout.
+GWINC has no resonance-frequency field: its `Optics.SRM.Tunephase` rotates
+the SR cavity
 quadratures, while GWINC also propagates the sidebands through that cavity.
 The script varies `Tunephase` until GWINC's quantum PSD has zero frequency
 slope and positive curvature at the source GW frequency. It finds that
 phase using the unsqueezed GWINC calculation, then applies the same ideal
 `10**(-dB/20)` ASD multiplier. For the default 600 Hz target, the solved
-GWINC `Tunephase` is about `0.01142099 rad`; the analytic phase cannot be
+GWINC `Tunephase` is about `0.01142715 rad`; the analytic phase cannot be
 copied directly because the two models have different optical transfer
 calculations.
 
@@ -284,6 +327,13 @@ The script prints the solved GWINC phase and all four ASDs at the target.
 At 600 Hz with the current files these are about `1.11e-24` (blue),
 `1.87e-25` (purple), `1.10e-24` (orange), and `3.49e-27 Hz^-1/2` (green).
 The tuned GWINC dip remains substantially shallower than the analytic one.
+
+For configurations without a GWINC minimum at the source frequency,
+`--gwinc-sr-tuning analytic-phase` evaluates the same physical detuning as
+the analytic SR model, using `Tunephase = pi - 2*phi_SR`. The legend labels
+this curve as using the analytic detuning. This mode does not impose a
+target-frequency minimum. In particular, with SRM power transmittance 0.5,
+the current GWINC `b_2` model has no 600 Hz minimum as detuning is varied.
 
 Thermal components are summed in PSD, then converted to ASD. GWINC gas
 scattering and damping sum over the four species exactly once. `ThermalPlusGas`

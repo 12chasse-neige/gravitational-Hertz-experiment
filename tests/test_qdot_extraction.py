@@ -1,15 +1,16 @@
 """Scientific checks for derivative decomposition and phase-sensitive projection."""
 
-from dataclasses import replace
 import json
-from pathlib import Path
 import subprocess
 import sys
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from ghe.config import SourceConfig
+from ghe.config import NoiseConfig, SourceConfig
 from ghe.detector_response import IntegrationSettings, curvature_response_components
 from ghe.finite_distance import (
     TIDAL_COMPONENT_NAMES,
@@ -20,7 +21,7 @@ from ghe.finite_distance import (
 from ghe.metric import calculate_response_phasor
 from ghe.quadrature import project_quadratures
 from ghe.validation import ARM_EXTENSION_ANGLES, PAPER_ANGLES, benchmark_config
-from scripts.extractQdot import analyze_single_source
+from scripts.extractQdot import analyze_single_source, calculate_analysis_snr
 
 
 def test_component_fields_recombine_and_are_symmetric_trace_free():
@@ -207,6 +208,138 @@ def test_same_frequency_contamination_is_not_identified_as_qdot():
     assert fit.sine != pytest.approx(2e-32, rel=1e-13, abs=0)
 
 
+@pytest.mark.parametrize("count", [1200, 1273])
+@pytest.mark.parametrize("reference_phase", [0.41, -1.73, 2 * np.pi + 0.23])
+def test_retarded_reference_preserves_global_phasor_and_original_times(
+    count, reference_phase
+):
+    times = 0.1234 + np.arange(count) / 120000
+    Omega = 1200 * np.pi
+    H = 1e-32 * (1.7 - 0.8j)
+    signal = np.real(H * np.exp(-1j * Omega * times)) + 0.3e-32
+    fit = project_quadratures(times, signal, Omega, reference_phase_rad=reference_phase)
+    local = H * np.exp(-1j * reference_phase)
+    np.testing.assert_allclose(
+        [fit.cosine, fit.sine, fit.offset],
+        [local.real, local.imag, 0.3e-32],
+        rtol=2e-12,
+        atol=0,
+    )
+    np.testing.assert_allclose(fit.phasor, H, rtol=2e-13, atol=0)
+    np.testing.assert_allclose(fit.fitted, signal, rtol=0, atol=2e-44)
+    with pytest.raises(ValueError, match="Reference phase must be finite"):
+        project_quadratures(times, signal, Omega, reference_phase_rad=np.nan)
+
+
+def test_center_retarded_qdot_recovery_is_data_dependent_and_subtracts_leakage():
+    cfg = benchmark_config()
+    times = 0.1234 + np.arange(1200) / 120000
+    delta = 0.23
+    model, arrays = analyze_single_source(
+        times, angles=PAPER_ANGLES, config=cfg, rotor_delay_rad=delta
+    )
+    reference_argument = cfg.gw_angular_frequency * (times - cfg.R / cfg.c) - 2 * delta
+    np.testing.assert_allclose(
+        arrays["reference_cosine"], np.cos(reference_argument), rtol=0, atol=2e-13
+    )
+    np.testing.assert_allclose(
+        arrays["reference_qdot"], -np.sin(reference_argument), rtol=0, atol=2e-13
+    )
+    H = complex(
+        *[
+            model["components"]["Qdot"]["modeled_phasor"][key]
+            for key in ("real", "imag")
+        ]
+    )
+    np.testing.assert_allclose(
+        arrays["qdot_extracted"], arrays["qdot_model"], rtol=0, atol=3e-12 * abs(H)
+    )
+    # Change the physical Qdot amplitude in the supplied h(t), add DC and an
+    # orthogonal harmonic, and verify extraction responds to data, not the model.
+    dc = 0.3 * abs(H)
+    harmonic = 0.2 * abs(H) * np.sin(2 * cfg.gw_angular_frequency * times)
+    observed = arrays["remaining_model"] + 1.7 * arrays["qdot_model"] + dc + harmonic
+    measured, recovered = analyze_single_source(
+        times, observed, angles=PAPER_ANGLES, config=cfg, rotor_delay_rad=delta
+    )
+    extraction = measured["qdot_extraction"]
+    record = extraction["projection"]["phasor"]
+    np.testing.assert_allclose(
+        complex(record["real"], record["imag"]), 1.7 * H, rtol=3e-12, atol=0
+    )
+    np.testing.assert_allclose(
+        recovered["qdot_extracted"],
+        1.7 * arrays["qdot_model"],
+        rtol=0,
+        atol=3e-12 * abs(H),
+    )
+    assert extraction["projection"]["dc_offset"] == pytest.approx(dc, rel=3e-12, abs=0)
+    np.testing.assert_allclose(
+        recovered["qdot_fit_residual"], harmonic, rtol=0, atol=3e-12 * abs(H)
+    )
+    assert extraction["raw_derivative_coefficient"] - extraction[
+        "removed_derivative_coefficient"
+    ] == pytest.approx(extraction["extracted_derivative_coefficient"], rel=3e-12, abs=0)
+    assert abs(extraction["removed_derivative_coefficient"]) > 0.5 * abs(
+        extraction["extracted_derivative_coefficient"]
+    )
+
+
+def test_snr_uses_peak_amplitude_one_sided_psd_and_separate_observation_time(
+    monkeypatch,
+):
+    cfg = benchmark_config()
+    report, _ = analyze_single_source(
+        np.arange(1200) / 120000, angles=PAPER_ANGLES, config=cfg
+    )
+    quantum, thermal, gas = 4e-50, 5e-50, 7e-50
+    monkeypatch.setattr(
+        "scripts.extractQdot.get_noise_psd",
+        lambda freq, **kwargs: np.full(len(freq), quantum),
+    )
+    monkeypatch.setattr(
+        "scripts.extractQdot.calculate_thermal_gas",
+        lambda **kwargs: SimpleNamespace(
+            frequency_hz=np.array([cfg.gw_frequency_hz]),
+            spectra_psd={
+                "ThermalTotal": np.array([thermal]),
+                "ResidualGas": np.array([gas]),
+            },
+            metadata={"test": "independent thermal and gas PSDs"},
+        ),
+    )
+    snr = calculate_analysis_snr(report, config=cfg, observation_time_s=200)
+    assert snr["one_sided_psd_per_hz"] == pytest.approx(
+        quantum + thermal + gas, rel=1e-14, abs=0
+    )
+    factor = np.sqrt(200 / (quantum + thermal + gas))
+    assert snr["rho_qdot"] == pytest.approx(
+        report["components"]["Qdot"]["modeled_phasor"]["amplitude"] * factor,
+        rel=3e-12,
+        abs=0,
+    )
+    assert snr["rho_total"] == pytest.approx(
+        report["signal_projection"]["phasor"]["amplitude"] * factor, rel=1e-14, abs=0
+    )
+    longer = calculate_analysis_snr(report, config=cfg, observation_time_s=800)
+    assert longer["rho_qdot"] == pytest.approx(2 * snr["rho_qdot"], rel=1e-14, abs=0)
+    quantum_only = calculate_analysis_snr(
+        report, config=cfg, observation_time_s=200, noise_budget="quantum"
+    )
+    assert quantum_only["one_sided_psd_per_hz"] == quantum
+    assert quantum_only["thermal_gas_metadata"] is None
+    assert quantum_only["rho_qdot"] == pytest.approx(
+        2 * snr["rho_qdot"], rel=1e-14, abs=0
+    )
+    for duration in (0, -1, np.nan):
+        with pytest.raises(ValueError, match="Observation time"):
+            calculate_analysis_snr(report, config=cfg, observation_time_s=duration)
+    with pytest.raises(ValueError, match="outside the configured SNR band"):
+        calculate_analysis_snr(
+            report, config=cfg, noise_config=NoiseConfig(max_frequency_hz=100)
+        )
+
+
 @pytest.mark.parametrize(
     "times,signal,Omega,match",
     [
@@ -238,6 +371,7 @@ def run_cli(*args, success=True):
         cwd=ROOT,
         capture_output=True,
         text=True,
+        check=False,
         timeout=60,
     )
     assert (completed.returncode == 0) == success, completed.stdout + completed.stderr
@@ -249,11 +383,22 @@ def test_cli_generation_loading_and_artifacts(tmp_path):
     run_cli(
         "--angles", *PAPER_ANGLES, "--rotor-delay-rad", 0.23, "--output-dir", generated
     )
-    for name in ("report.json", "signals.npz", "signals.csv", "comparison.png"):
+    for name in (
+        "report.json",
+        "snr.json",
+        "signals.npz",
+        "signals.csv",
+        "comparison.png",
+    ):
         assert (generated / name).stat().st_size > 0
     first = json.loads((generated / "report.json").read_text())
     assert first["signal_origin"] == "generated"
     assert "cannot be separated" in first["interpretation"]["signal_projection"]
+    assert first["snr"]["noise_budget"] == "quantum-thermal-gas"
+    assert first["snr"]["rho_qdot"] == pytest.approx(
+        first["snr"]["rho_qdot_model"], rel=3e-12, abs=0
+    )
+    assert json.loads((generated / "snr.json").read_text()) == first["snr"]
     run_cli(
         "--angles",
         *PAPER_ANGLES,
@@ -267,6 +412,8 @@ def test_cli_generation_loading_and_artifacts(tmp_path):
     second = json.loads((loaded / "report.json").read_text())
     assert second["signal_origin"] == "loaded"
     assert second["signal_projection"] == first["signal_projection"]
+    assert second["qdot_extraction"] == first["qdot_extraction"]
+    assert second["snr"] == first["snr"]
     with np.load(loaded / "signals.npz", allow_pickle=False) as arrays:
         np.testing.assert_allclose(
             arrays["qdot_model"] + arrays["remaining_model"],
@@ -281,6 +428,12 @@ def test_cli_generation_loading_and_artifacts(tmp_path):
             * 1e-12,
         )
         assert "sine_quadrature" in arrays and "metadata" in arrays
+        np.testing.assert_allclose(
+            arrays["qdot_extracted"],
+            arrays["qdot_model"],
+            rtol=0,
+            atol=first["components"]["Qdot"]["modeled_phasor"]["amplitude"] * 3e-12,
+        )
     csv = np.genfromtxt(loaded / "signals.csv", delimiter=",", names=True)
     assert csv.dtype.names[:2] == ("time_s", "signal")
     assert csv.size == first["sampling"]["num_samples"]
@@ -312,6 +465,10 @@ def test_cli_raw_loaded_signal_preserves_time_origin_and_reports_mismatch(tmp_pa
         *PAPER_ANGLES,
         "--signal-input",
         path,
+        "--observation-years",
+        0.25,
+        "--noise-budget",
+        "quantum",
         "--output-dir",
         tmp_path / "analysis",
     )
@@ -321,6 +478,8 @@ def test_cli_raw_loaded_signal_preserves_time_origin_and_reports_mismatch(tmp_pa
     assert report["signal_projection"]["method"] == "least_squares"
     assert report["sampling"]["first_time_s"] == times[0]
     assert report["input_model_agreement"]["residual_rms"] > 0
+    assert report["snr"]["noise_budget"] == "quantum"
+    assert report["snr"]["observation_years"] == 0.25
     with np.load(tmp_path / "analysis" / "signals.npz") as arrays:
         np.testing.assert_array_equal(arrays["time_s"], times)
     missing = run_cli("--signal-input", path, success=False)
@@ -335,6 +494,8 @@ def test_cli_raw_loaded_signal_preserves_time_origin_and_reports_mismatch(tmp_pa
         (("--sample-rate", 600), "Nyquist"),
         (("--distance", -1), "finite and positive"),
         (("--rotor-delay-rad", "nan"), "finite"),
+        (("--observation-years", 0), "Observation time"),
+        (("--observation-years", "nan"), "Observation time"),
     ],
 )
 def test_cli_rejects_invalid_model_and_sampling(tmp_path, arguments, match):

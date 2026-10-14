@@ -8,12 +8,13 @@ model. Coefficients here are peak amplitudes, not FFT magnitudes or ASD values.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 import numpy as np
 
 
 @dataclass(frozen=True)
 class QuadratureFit:
-    """h(t)=cosine*cos(Omega*t)+sine*sin(Omega*t)+offset, at original times."""
+    """h(t)=cosine*cos(psi)+sine*sin(psi)+offset, psi=Omega*t-reference_phase."""
 
     cosine: float
     sine: float
@@ -23,14 +24,17 @@ class QuadratureFit:
     method: str
     condition_number: float
     orthogonality_error: float
+    reference_phase_rad: float = 0.0
 
     @property
     def phasor(self) -> complex:
-        """Peak exp(-i Omega t) convention: H=cosine+i*sine."""
-        return complex(self.cosine, self.sine)
+        """Peak exp(-i Omega t) phasor, preserving the original time zero."""
+        return complex(self.cosine, self.sine) * np.exp(1j * self.reference_phase_rad)
 
 
-def project_quadratures(time_s, signal, angular_frequency) -> QuadratureFit:
+def project_quadratures(
+    time_s, signal, angular_frequency, *, reference_phase_rad=0.0
+) -> QuadratureFit:
     """Project a real signal onto sine, cosine and DC without shifting time zero.
 
     On a uniform grid spanning an integer number of cycles (endpoint excluded),
@@ -39,6 +43,8 @@ def project_quadratures(time_s, signal, angular_frequency) -> QuadratureFit:
     Otherwise a joint least-squares fit accounts for finite-window and DC
     leakage. Nonuniform increasing timestamps are supported by the same fit;
     each sample has equal weight. Scaling h first avoids losing tiny strains.
+    A reference phase changes the fitted basis to Omega*t-reference_phase_rad,
+    but the returned phasor still refers to the original reception-time zero.
     """
     if np.iscomplexobj(time_s) or np.iscomplexobj(signal):
         raise ValueError("Time and signal arrays must be real")
@@ -60,12 +66,14 @@ def project_quadratures(time_s, signal, angular_frequency) -> QuadratureFit:
         raise ValueError("time_s must be strictly increasing")
     if not np.isfinite(angular_frequency) or angular_frequency <= 0:
         raise ValueError("Angular frequency must be finite and positive")
+    if not np.isfinite(reference_phase_rad):
+        raise ValueError("Reference phase must be finite")
     uniform = np.allclose(steps, steps[0], rtol=1e-8, atol=0)
     if uniform and angular_frequency * steps[0] >= np.pi * (1 - 1e-12):
         raise ValueError(
             "Signal frequency must be strictly below the sampling Nyquist frequency"
         )
-    phase = angular_frequency * times
+    phase = angular_frequency * times - reference_phase_rad
     if not np.all(np.isfinite(phase)):
         raise ValueError("Time-frequency products must be finite")
     basis = np.column_stack(
@@ -99,4 +107,5 @@ def project_quadratures(time_s, signal, angular_frequency) -> QuadratureFit:
         method,
         condition,
         orthogonality_error,
+        float(reference_phase_rad),
     )
