@@ -1,4 +1,9 @@
-# Production integration: review guide
+# Model and validation guide
+
+The active workflows cover detuned-interferometer design, single-rotor Qdot
+projection, and coherent-array generation/SNR. See [current commands](current-workflows.md)
+and `python main.py --help`. Numerical results below are historical benchmarks,
+not values for the current detector YAML.
 
 ## What changed
 
@@ -61,8 +66,8 @@ This is a domain guard, not a guarantee that higher multipoles are negligible
 immediately outside the sphere. Source compactness, slow motion and excluded
 higher multipoles remain scientific assumptions.
 
-Gauss–Legendre integration starts at 48 points per arm, doubles to at most 768,
-and requires successive estimates to agree within 1e-9 times the sum of absolute
+Gauss–Legendre integration starts at 96 points per arm, doubles to at most 1536,
+and requires successive estimates to agree within 1e-11 times the sum of absolute
 arm integrands. This scale is meaningful at differential-response nulls. The
 reported refinement error is an estimate, not a rigorous error bound. Failure
 raises `ArithmeticError`; invalid geometry raises `ValueError`. Numerical settings
@@ -87,7 +92,8 @@ The scripts directory is `scripts/`; `SCR_DIR` remains only a path alias. Delete
 low-level TT/incomplete-metric functions have no compatibility backend. Independent
 Newtonian mass quadrature and the old time-domain hole moment were kept in the
 former test suite, which has since been removed. The maintained validation command
-replaces temporary diagnostics.
+replaces temporary diagnostics and now also checks derivative recombination,
+Qdot-phase recovery and the combined quantum/thermal/gas SNR budget.
 NPZ remains an in-memory format; streaming CSV is the supported large-array path.
 
 ## Historical verification record and known limits

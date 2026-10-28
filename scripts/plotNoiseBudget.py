@@ -77,7 +77,7 @@ def calculate_noise_curves(
     freq_max_hz: float | None = None,
     points: int = 1000,
 ) -> NoiseCurves:
-    """Evaluate the same independent PSDs used by noiseAnalysis.py.
+    """Evaluate the independent PSDs used by Qdot and array SNR calculations.
 
     GWINC supplies the six available thermal terms and gas scattering/damping.
     Its quantum budget is never evaluated. The selected analytic quantum PSD
@@ -94,7 +94,7 @@ def calculate_noise_curves(
     if detector_config is not None:
         detector = detector_config
     elif path == DETECTOR_CONFIG_FILE.resolve():
-        # Match noiseAnalysis.py's default, including runtime environment fields.
+        # Use the active detector, including runtime environment fields.
         detector = DetectorConfig().with_source(SourceConfig())
     else:
         detector = DetectorConfig.from_yaml(path)

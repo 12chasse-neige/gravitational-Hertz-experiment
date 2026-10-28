@@ -1,8 +1,7 @@
 """
 Reusable package APIs for the Gravitational Hertz Experiment.
 
-The legacy scripts in ``scripts/`` remain as command-line compatibility wrappers.
-New numerical code should live in this package.
+Numerical models live here; ``scripts/`` exposes the workflows listed by main.py.
 """
 
 from __future__ import annotations

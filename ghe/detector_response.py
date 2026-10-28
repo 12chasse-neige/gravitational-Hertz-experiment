@@ -27,7 +27,7 @@ from .finite_distance import (
 class IntegrationSettings:
     """Numerical accuracy controls, independent of the physical approximation.
 
-    Compare successive doubled Gauss-Legendre rules, starting at 48 points per
+    Compare successive doubled Gauss-Legendre rules, starting at 96 points per
     arm. The error scale is the sum of absolute arm integrands, so a physical
     differential-response null does not cause meaningless relative errors.
     """

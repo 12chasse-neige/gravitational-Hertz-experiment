@@ -29,7 +29,7 @@
 
 
 Infrastructure:
-  Length: 40             # m; whoa
+  Length: 4             # m; whoa
   Temp: 293                  # K; Temperature of the Vacuum
   ResidualGas:
     # polarizabilities from https://cccbdb.nist.gov/pollistx.asp

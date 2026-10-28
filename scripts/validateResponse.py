@@ -1,4 +1,4 @@
-"""Run fixed physics benchmarks and small end-to-end array validations."""
+"""Validate rotor response, Qdot phase projections and small coherent arrays."""
 
 from __future__ import annotations
 import argparse
@@ -10,10 +10,10 @@ if __package__ in (None, ""):
 from ghe.validation import run_validation
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=Path("runs/validation"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     print(f"Validated results: {run_validation(args.output_dir)}")
 
 

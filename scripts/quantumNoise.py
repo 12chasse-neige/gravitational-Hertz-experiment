@@ -475,7 +475,7 @@ def plot_noise_curve_with_detuned_interferometer(
     return target_detuned_asd
 
 
-def parse_arguments() -> argparse.Namespace:
+def parse_arguments(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot quantum-noise model comparisons.")
     parser.add_argument(
         "--output",
@@ -551,11 +551,11 @@ def parse_arguments() -> argparse.Namespace:
         default=None,
         help="Override SRM transmittance in both detuned curves.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_arguments()
+def main(argv=None) -> None:
+    args = parse_arguments(argv)
     detector_config = DetectorConfig.from_yaml(args.detector_config)
     if args.target_frequency_hz is not None:
         if not np.isfinite(args.target_frequency_hz) or args.target_frequency_hz <= 0:

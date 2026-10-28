@@ -149,6 +149,7 @@ def save_snr_json(
     source_config=None,
     detector_config=None,
     noise_config=None,
+    noise_budget: str = "quantum",
 ) -> None:
     """Persist a small machine-readable SNR summary for run directories."""
 
@@ -158,6 +159,7 @@ def save_snr_json(
         json.dumps(
             {
                 "snr_year": snr_year,
+                "noise_budget": noise_budget,
                 **model_metadata(source_config),
                 "detector_config": asdict(
                     detector_config

@@ -1,115 +1,108 @@
 # Gravitational Hertz Experiment
 
-Calculate the oscillating gravitational response of a two-hole rotor and coherent
-source arrays in an ideal equal-arm, free-mass Michelson interferometer.
-The production model retains all radial terms of the conserved mass quadrupole,
-source-to-field retardation, and finite light-travel time along both arms.
+Design a detuned signal-recycling interferometer for the oscillating gravity of
+mechanical rotors, study the rotor **Qdot contribution**, and generate coherent
+rotor arrays with a total-signal SNR estimate.
 
-The nearby-source response is mainly a driven Newtonian tidal interaction. Its
-amplitude is not evidence of isolating emitted gravitational radiation. Reported
-SNR uses the existing strain-referred noise models as a conditional calibration
-proxy; suspension, feedback, cavity response, and source disturbances are outside
-this calculation.
+The field model retains all five derivative contributions (`Q`, `Qdot`, `Qddot`,
+`Q3`, `Q4`), retardation, and finite light-travel time along both arms. The signal
+response is an ideal free-mass Michelson; the detuned optical model supplies a
+strain-noise proxy. A full suspended cavity response to a nearby rotor is not yet
+modeled. A Qdot-phase sine projection can contain other terms at the same frequency.
 
-## Start here
-
-- [Review guide](docs/production-integration-review.md): code ownership, equations,
-  phase signs, compatibility changes, and validation evidence.
-- [Field and response derivation](docs/near-field-analysis.md): equations used by
-  the production kernel; its original diagnostic results are historical.
-- [Current workflows](docs/current-workflows.md): small runs and large-run commands.
-- [Validation record](docs/production-validation.json): fixed physics benchmarks
-  and measured 1-, 10-, and 100-source examples.
-
-## Structure
-
-| Layer | Responsibility |
-| --- | --- |
-| `ghe/finite_distance.py` | Rotor STF moment, physical metric, acceleration, tidal curvature |
-| `ghe/detector_response.py` | Converged arm integration and independent harmonic response |
-| `ghe/metric.py` | Public geometry-to-phasor and time-domain response APIs |
-| `ghe/optimization.py`, `ghe/source_array/` | Geometry search, placement, orientation, phase delays, array storage |
-| `ghe/signal.py` | Coherent phasor summation and time-series synthesis |
-| `ghe/spectrum.py`, `ghe/noise.py`, `ghe/snr.py` | FFT, retained noise models, conditional SNR |
-| `ghe/thermal_gas.py`, `ghe/residual_gas.py` | Focused GWINC thermal/gas estimate and notebook gas comparisons |
-| `ghe/artifacts.py` | Model provenance and saved-data compatibility |
-| `scripts/`, `main.py` | Command-line entry points |
-
-## Environment and verification
+## Setup
 
 ```bash
-conda create -n ghe python=3.13
 conda activate ghe
+# For a new environment: conda create -n ghe python=3.13
 python -m pip install -r requirements.txt
-python scripts/validateResponse.py --output-dir runs/validation
+python main.py
 ```
 
-## Thermal and residual-gas estimate
+Run commands from the repository root. `python main.py COMMAND --help` shows the
+options for a workflow. Every retained script also runs directly.
 
-After editing the YAML configurations, run:
+## Workflows
+
+| Command | Script | Purpose |
+| --- | --- | --- |
+| `quantum` | `scripts/quantumNoise.py` | Compare analytic and GWINC quantum noise; vary SRM transmission, SR cavity length, detuning target, squeezing |
+| `noise-budget` | `scripts/plotNoiseBudget.py` | Plot analytic quantum, thermal and residual-gas contributions |
+| `thermal-gas` | `scripts/estimateThermalGas.py` | Calculate thermal/gas spectra and conditional pressure constraints |
+| `qdot` | `scripts/extractQdot.py` | Generate or load one rotor's signal; project onto the Qdot-phase sine and report model overlap |
+| `qdot-sweep` | `scripts/sweepQdotArmLength.py` | Optimize modeled Qdot SNR over a bounded arm-length range |
+| `array-generate` | `scripts/sourceArray.py` | Generate phase-aligned arrays in streaming CSV or NPZ |
+| `array` | `scripts/runArray.py` | Generate or load an array; calculate total-signal SNR by phasor or FFT |
+| `array-sweep` | `scripts/sweepArraySNR.py` | Compare total-signal SNR versus source count with ideal coherent scaling |
+| `validate` | `scripts/validateResponse.py` | Check field/response agreement, Qdot projections and small array pipelines |
 
 ```bash
-conda activate ghe
-python scripts/estimateThermalGas.py --config configs/detector.yaml \
-  --output-dir runs/thermal-gas-hybrid
+python main.py quantum --output runs/design/quantum.png
+python main.py noise-budget --output runs/design/noise-budget.png
+python main.py qdot --output-dir runs/qdot
+python main.py qdot-sweep --min-length 4 --max-length 40 --points 5 \
+  --output-dir runs/qdot-arm-length
+
+python main.py array --renew-source-array --source-array-num-sources 10 \
+  --source-array-chunk-size 5 --source-array-format npz \
+  --monochromatic --noise-budget quantum-thermal-gas --run-dir runs/array-example
+python main.py array --source-array-input runs/array-example/source_array.npz \
+  --noise-budget quantum-thermal-gas --run-dir runs/array-fft
+python main.py array-sweep --array-sizes 1,3,10 \
+  --noise-budget quantum-thermal-gas --output runs/array-scaling.csv
+python main.py validate --output-dir runs/validation
 ```
 
-This writes `thermal_gas.csv`, `.json`, and `.png` in the selected output
-directory. The default detector is a CE2 silicon hybrid with GHE's signal
-recycling settings. Separate runs can use `configs/aLIGO.yaml` or
-`configs/CE2silicon.yaml` for comparison. `scripts/noiseAnalysis.py` now adds
-these thermal and GWINC residual-gas PSDs to its analytic quantum PSD by default:
+Qdot extraction defaults to **quantum + thermal + residual gas**. Array commands
+retain their **quantum-only** default; use `--noise-budget quantum-thermal-gas`
+for the combined budget, as in the examples above.
+The array SNR uses the **complete gravitational response**, including every
+derivative term; it does not measure an isolated array Qdot contribution.
+`--monochromatic` evaluates the full response phasor directly; the former
+`--use-mono-approx` spelling and existing `main.py --renew-source-array ...`
+commands remain supported.
 
-```bash
-python scripts/noiseAnalysis.py
-python scripts/noiseAnalysis.py --noise-budget quantum
-```
+## Configuration and results
 
-The second command retains the quantum-only estimate. Other SNR entry points
-keep their existing defaults. See the
-[thermal/gas workflow](docs/current-workflows.md#thermal-and-residual-gas-estimates).
+- `configs/detector.yaml`: active custom detector. Set arm length, optical power,
+  SRM parameters, mirror geometry, squeezing, temperatures and gas pressures here.
+  A null `Optics.SRM.Tunephase` requests automatic source-frequency tuning.
+- `configs/source.yaml`: rotor dimensions, spin, source distance as `R/L`, sampling,
+  noise band and array-generation defaults. The gravity signal frequency is twice
+  the mechanical rotation frequency.
+- `configs/aLIGO.yaml`, `configs/CE2silicon.yaml`, `configs/Voyager.yaml`: separate
+  detector-design references; they are not replacements for the active YAML.
+- `runs/`: reports, signals, arrays, plots and SNR records. Plotting scripts also
+  retain their default publication destinations in `paper/figures/`.
+- `data/`: compatible shared geometry cache and optional default array/spectrum
+  outputs. Saved payloads and their `.metadata.json` sidecars belong together.
 
-Plot the SNR budget and its individual thermal/gas contributions, using the
-analytic quantum model in place of GWINC quantum noise:
+Defaults come from the actual YAML files, not the historical kilometre-scale
+examples in older reports. Explicit `SourceConfig.R` stays fixed when replacing
+`L`; use `replace(config, L=..., R=None)` to scale distance with arm length.
+For large arrays use streaming CSV and check source/arm clearance. Old artifacts
+with incompatible source parameters or model metadata must be regenerated.
 
-```bash
-python scripts/plotNoiseBudget.py
-```
+## Code and scientific notes
 
-This saves `paper/figures/SNR Noise Budget.png` and a matching vector PDF with
-the same typography and colors as the quantum-noise comparison figure.
+| Package | Responsibility |
+| --- | --- |
+| `ghe/finite_distance.py`, `detector_response.py`, `metric.py` | Conserved rotor quadrupole and finite-arm detector response |
+| `ghe/noise.py`, `phase.py`, `phase_convention.py` | Analytic detuned quantum noise and phase conventions |
+| `ghe/thermal_gas.py`, `residual_gas.py` | GWINC thermal/gas calculations and gas comparisons |
+| `ghe/quadrature.py`, `qdot_scaling.py` | Phase projections and Qdot arm-length study |
+| `ghe/optimization.py`, `geometry.py`, `source_array/` | Geometry search, array placement, orientation, coherent phase delays and storage |
+| `ghe/signal.py`, `spectrum.py`, `snr.py` | Single/array signal synthesis, FFT and coherent SNR |
+| `ghe/config.py`, `paths.py`, `artifacts.py`, `validation.py` | Configuration, paths, provenance and reproducible validation |
 
-## Small end-to-end run
+See [current commands and assumptions](docs/current-workflows.md),
+[model and validation guide](docs/production-integration-review.md), and
+[finite-distance field derivation](docs/near-field-analysis.md).
+[theoreticalDerivation.md](docs/theoreticalDerivation.md) preserves the original
+proposal; its radiative-only treatment is historical.
 
-```bash
-python main.py --renew-source-array --source-array-num-sources 100 \
-  --source-array-chunk-size 10 --source-array-format csv \
-  --run-dir runs/example
-python main.py --source-array-input runs/example/source_array.csv \
-  --use-mono-approx --run-dir runs/example-mono
-```
-
-Both paths use the same complete response phasor. The first synthesizes a signal
-and FFT; the second evaluates monochromatic SNR directly. For a bin-aligned tone,
-they agree. `--use-mono-approx` is retained as a historical flag name; the source
-model itself is monochromatic.
-
-## Configuration and saved data
-
-`configs/source.yaml` and `configs/detector.yaml` supply defaults. Explicit Python
-arguments and supported environment/CLI overrides remain available. Source
-`R=None` derives distance from the configured arm-length ratio; explicit distances
-are preserved. To rescale arm length and derived placement together, use
-`replace(config, L=new_length, R=None)`.
-
-Old best-geometry caches are recomputed. Old arrays and spectra must be regenerated:
-their orientations and phases belong to the removed radiative-only model.
-CSV and paired NPY outputs have adjacent `.metadata.json` sidecars; NPZ and JSON
-outputs embed model identity. Keep payloads and metadata together.
-
-Use streaming CSV for very large arrays. Compressed NPZ is convenient for small
-and medium arrays and is loaded as a whole. Chunk-anchor generation approximates
-rotor orientation, while **every source phase uses the complete response**.
-Under identical, aligned source responses and fixed noise, amplitude and SNR scale
-as `N`; squared SNR scales as `N²`. Real spatial arrays need not have identical
-source amplitudes.
+The cleanup removes standalone legacy wrappers `bestPosition.py`,
+`metricCalculate.py`, `fourier.py`, `noiseAnalysis.py`, `runSNR.py` and
+`projectConfig.py`. Their relevant calculations remain in the workflows above
+and in `ghe/`. Existing local runs, data, reference materials and manuscript files
+are preserved. Historical numerical reports do not describe the active detector.

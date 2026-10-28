@@ -1,3 +1,5 @@
+"""Generate coherent rotor arrays with phases matched to the full response."""
+
 from __future__ import annotations
 
 if __package__ in (None, ""):
@@ -9,39 +11,14 @@ if __package__ in (None, ""):
 import argparse
 from pathlib import Path
 
-from ghe.config import BEST_POSITION_FILE, DATA_DIR, SourceArrayConfig
-from ghe.geometry import (
-    _get_perpendicular_axis,
-    cartesian_to_spherical,
-    rotate_reference_vector,
-    spherical_to_cartesian,
-    spherical_unit_vector,
-)
-from ghe.optimization import (
-    BestGeometry,
-    BestGeometry as RelativeGeometry,
-    parse_best_position_text as _parse_best_position_text,
-    save_best_geometry,
-    solve_best_geometry,
-)
+from ghe.config import SourceArrayConfig
+from ghe.paths import DATA_DIR
 from ghe.source_array.generation import (
-    ArrayContext,
     build_array_context,
     build_chunk,
-    construct_source_array,
-    iter_source_chunks,
     summary_lines,
-    format_vector,
     write_source_array_csv,
     write_source_array_npz,
-)
-from ghe.source_array.layout import choose_lattice_dimensions, positions_for_index_range
-from ghe.source_array.phase import get_signal_amplitude_and_phase, wrap_phase
-from ghe.source_array.schema import SOURCE_ARRAY_DTYPE
-from ghe.source_array.strategies import (
-    approximate_chunk_center_parameters,
-    exact_anchor_for_source_index,
-    optimize_rotor_for_fixed_source,
 )
 
 _DEFAULT_OUTPUT_FILE = DATA_DIR / "source_array_distribution.csv"
@@ -49,31 +26,11 @@ _DEFAULT_NPZ_OUTPUT_FILE = DATA_DIR / "source_array_distribution.npz"
 _SOURCE_ARRAY_DEFAULTS = SourceArrayConfig()
 _DEFAULT_APPROXIMATION_CHUNK_SIZE = _SOURCE_ARRAY_DEFAULTS.approximation_chunk_size
 
-_build_chunk = build_chunk
-_positions_for_index_range = positions_for_index_range
-_optimize_rotor_for_fixed_source = optimize_rotor_for_fixed_source
-_exact_anchor_for_source_index = exact_anchor_for_source_index
-_approximate_chunk_center_parameters = approximate_chunk_center_parameters
-_format_vector = format_vector
-
-
-def _write_best_position_file(
-    angles: tuple[float, float, float, float],
-    amplitude: float,
-    path: Path = BEST_POSITION_FILE,
-) -> None:
-    save_best_geometry(BestGeometry(*angles, signal_amplitude=amplitude), path=path)
-
-
-def _print_summary(context: ArrayContext, preview_rows=None) -> None:
-    print("\n".join(summary_lines(context, preview_rows)))
-
-
-def parse_arguments() -> argparse.Namespace:
+def parse_arguments(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Construct a coherent source array around the best geometry from "
-            "bestPosition.py and compute the phase offset for each source."
+            "Construct a coherent source array around the optimized geometry "
+            "and compute the full-response phase offset for each source."
         )
     )
     parser.add_argument(
@@ -140,13 +97,13 @@ def parse_arguments() -> argparse.Namespace:
         "--recompute-best-position",
         action="store_true",
         default=_SOURCE_ARRAY_DEFAULTS.recompute_best_position,
-        help="Run the optimizer from bestPosition.py instead of only reusing data/bestPosition.txt.",
+        help="Recompute geometry with ghe.optimization instead of reusing data/bestPosition.txt.",
     )
     parser.add_argument(
         "--optimize-each-source",
         action="store_true",
         default=_SOURCE_ARRAY_DEFAULTS.optimize_each_source,
-        help="Run bestPosition optimization for each source individually. Enabled by default.",
+        help="Optimize each rotor orientation individually. Enabled by default.",
     )
     parser.add_argument(
         "--no-optimize-each-source",
@@ -160,8 +117,8 @@ def parse_arguments() -> argparse.Namespace:
         dest="chunk_center_approximation",
         action="store_true",
         help=(
-            "Speed up generation by optimizing and phase-extracting only the center "
-            "source of each approximation chunk, then approximating nearby sources."
+            "Optimize the rotor axis once per approximation chunk; still "
+            "calculate the complete response phase for every source."
         ),
     )
     approximation_group.add_argument(
@@ -187,11 +144,16 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Print the geometry summary and preview rows without writing output files.",
     )
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.num_sources < 1 or args.chunk_size < 1 or args.approximation_chunk_size < 1:
+        parser.error("Source count and chunk sizes must be positive.")
+    if args.preview < 0:
+        parser.error("--preview must be nonnegative.")
+    return args
 
 
-def main() -> None:
-    args = parse_arguments()
+def main(argv=None) -> None:
+    args = parse_arguments(argv)
 
     context = build_array_context(
         num_sources=args.num_sources,

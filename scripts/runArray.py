@@ -1,0 +1,321 @@
+"""
+Generate or load a coherent rotor array and calculate its total-signal SNR.
+
+Numerical work lives in ``ghe/``. Optionally regenerate an array, then sum the
+complete detector response with its stored rotor delays. Evaluate one-year SNR
+either directly from that monochromatic phasor or through a time series and FFT.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import sys
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import numpy as np
+
+from ghe.config import (
+    RunConfig,
+    DetectorConfig,
+    SourceArrayConfig,
+    SourceConfig,
+    build_time_axis,
+)
+from ghe.artifacts import model_metadata, write_metadata
+from ghe.paths import (
+    SOURCE_ARRAY_DISTRIBUTION_FILE,
+    SOURCE_ARRAY_NPZ_FILE,
+    TOTAL_FREQS_FILE,
+    TOTAL_MAGNITUDE_FILE,
+    make_run_dir,
+)
+from ghe.signal import (
+    calculate_source_array_signal_from_file,
+    choose_source_array_input,
+    compute_phasor_sum_from_file,
+)
+from ghe.snr import calculate_snr, calculate_snr_from_phasor, save_snr_json
+from ghe.source_array.generation import write_source_array_csv, write_source_array_npz
+from ghe.noise import NOISE_BUDGETS
+from ghe.spectrum import calculate_spectrum, save_spectrum_arrays, save_spectrum_npz
+
+_SOURCE_ARRAY_DEFAULTS = SourceArrayConfig()
+DEFAULT_SOURCE_ARRAY_NUM_SOURCES = _SOURCE_ARRAY_DEFAULTS.num_sources
+DEFAULT_SOURCE_ARRAY_CHUNK_SIZE = _SOURCE_ARRAY_DEFAULTS.chunk_size
+
+
+def parse_arguments(argv=None) -> argparse.Namespace:
+    """Parse array generation, noise-budget and output controls."""
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Calculate the total source-array detector signal and SNR from the "
+            "source-array distribution."
+        )
+    )
+    parser.add_argument(
+        "--renew-source-array",
+        action="store_true",
+        help="Regenerate the source array before calculating the total SNR.",
+    )
+    parser.add_argument(
+        "--source-array-num-sources",
+        type=int,
+        default=DEFAULT_SOURCE_ARRAY_NUM_SOURCES,
+        help=(
+            "Number of sources to use when --renew-source-array is set. "
+            f"Default: {DEFAULT_SOURCE_ARRAY_NUM_SOURCES}."
+        ),
+    )
+    parser.add_argument(
+        "--source-array-chunk-size",
+        type=int,
+        default=DEFAULT_SOURCE_ARRAY_CHUNK_SIZE,
+        help=(
+            "Chunk size for source-array regeneration and signal accumulation. "
+            f"Default: {DEFAULT_SOURCE_ARRAY_CHUNK_SIZE}."
+        ),
+    )
+    optimization_group = parser.add_mutually_exclusive_group()
+    optimization_group.add_argument(
+        "--optimize-each-source",
+        dest="optimize_each_source",
+        action="store_true",
+        help="Optimize each source during regeneration.",
+    )
+    optimization_group.add_argument(
+        "--no-optimize-each-source",
+        dest="optimize_each_source",
+        action="store_false",
+        help="Use the faster rigid-transport source-array approximation during regeneration.",
+    )
+    parser.set_defaults(
+        optimize_each_source=_SOURCE_ARRAY_DEFAULTS.optimize_each_source
+    )
+
+    approximation_group = parser.add_mutually_exclusive_group()
+    approximation_group.add_argument(
+        "--source-array-chunk-center-approximation",
+        dest="source_array_chunk_center_approximation",
+        action="store_true",
+        help="Use one exact optimization per chunk during source-array regeneration.",
+    )
+    approximation_group.add_argument(
+        "--source-array-exact-optimization",
+        dest="source_array_chunk_center_approximation",
+        action="store_false",
+        help=(
+            "Disable chunk-center approximation and optimize every source exactly "
+            "when per-source optimization is enabled."
+        ),
+    )
+    parser.set_defaults(
+        source_array_chunk_center_approximation=(
+            _SOURCE_ARRAY_DEFAULTS.main_renewal_chunk_center_approximation
+        )
+    )
+    parser.add_argument(
+        "--source-array-format",
+        choices=("csv", "npz", "both"),
+        default="csv",
+        help="Output format used when --renew-source-array is set. Default: csv.",
+    )
+    parser.add_argument(
+        "--source-array-input",
+        type=Path,
+        default=None,
+        help="Optional source-array CSV or NPZ input path. Defaults to NPZ when present, otherwise CSV.",
+    )
+    parser.add_argument(
+        "--run-dir",
+        type=Path,
+        default=None,
+        help="Optional output directory for run artifacts. Writes config, signal, spectrum, and SNR artifacts there.",
+    )
+    parser.add_argument(
+        "--noise-budget", choices=NOISE_BUDGETS, default="quantum",
+        help="SNR noise PSD: quantum (default), or quantum + thermal + residual gas.",
+    )
+    parser.add_argument(
+        "--monochromatic", "--use-mono-approx", dest="use_mono_approx",
+        action="store_true",
+        help=(
+            "Sum the full monochromatic response phasors and evaluate SNR "
+            "directly, without synthesizing a time series and FFT."
+        ),
+    )
+    args = parser.parse_args(argv)
+    if args.source_array_num_sources < 1 or args.source_array_chunk_size < 1:
+        parser.error("Source count and chunk size must be positive.")
+    return args
+
+
+def renew_source_array(
+    num_sources: int,
+    chunk_size: int,
+    optimize_each_source: bool,
+    chunk_center_approximation: bool,
+    output_format: str = "csv",
+    output_dir: Path | None = None,
+) -> Path:
+    """
+    Regenerate source-array storage and return the path main should read.
+
+    ``output_format='csv'`` preserves the historical workflow. ``npz`` is the
+    convenient package format for small and medium experiments because the structured array
+    can be loaded directly without CSV parsing.
+    """
+
+    if num_sources < 1:
+        raise ValueError("--source-array-num-sources must be positive.")
+    if chunk_size < 1:
+        raise ValueError("--source-array-chunk-size must be positive.")
+
+    print("\nRenewing source array distribution...")
+    if chunk_center_approximation:
+        print(
+            f"Using chunk-center approximation (one exact optimization per {chunk_size} sources)."
+        )
+    elif optimize_each_source:
+        print("Using exact per-source optimization.")
+    else:
+        print("Using rigid-transport source-array approximation.")
+
+    csv_path = (
+        output_dir / "source_array.csv"
+        if output_dir
+        else SOURCE_ARRAY_DISTRIBUTION_FILE
+    )
+    npz_path = output_dir / "source_array.npz" if output_dir else SOURCE_ARRAY_NPZ_FILE
+    input_path = csv_path
+    if output_format in ("csv", "both"):
+        write_source_array_csv(
+            output_path=csv_path,
+            num_sources=num_sources,
+            optimize_each_source=optimize_each_source,
+            chunk_center_approximation=chunk_center_approximation,
+            approximation_chunk_size=chunk_size,
+            chunk_size=chunk_size,
+        )
+    if output_format in ("npz", "both"):
+        write_source_array_npz(
+            output_path=npz_path,
+            num_sources=num_sources,
+            optimize_each_source=optimize_each_source,
+            chunk_center_approximation=chunk_center_approximation,
+            approximation_chunk_size=chunk_size,
+            chunk_size=chunk_size,
+        )
+        input_path = npz_path
+
+    print("Source array distribution renewed.")
+    return input_path
+
+
+def _run_monochromatic(args: argparse.Namespace, run_dir: Path | None) -> None:
+    """Evaluate the complete monochromatic array response without an FFT."""
+
+    source_config = SourceConfig()
+    source_array_input = args.source_array_input
+    if source_array_input is None:
+        source_array_input = choose_source_array_input()
+
+    print("\nComputing monochromatic phasor sum ...")
+    phasor = compute_phasor_sum_from_file(
+        source_array_input,
+        config=source_config,
+        chunk_size=args.source_array_chunk_size,
+    )
+
+    gw_freq_hz = source_config.gw_frequency_hz
+    snr_year = calculate_snr_from_phasor(
+        phasor, gw_freq_hz, detector_config=DetectorConfig().with_source(source_config),
+        noise_budget=args.noise_budget,
+    )
+
+    print(f"Signal frequency         = {gw_freq_hz:.1f} Hz")
+    print(f"Coherent phasor |H|  = {abs(phasor):.6e}")
+    print(f"Phasor argument      = {np.angle(phasor):.6f} rad")
+    print(f"Calculated SNR (1 yr, monochromatic) = {snr_year:.4e}")
+
+    if run_dir is not None:
+        np.save(run_dir / "phasor.npy", np.array([phasor.real, phasor.imag]))
+        write_metadata(run_dir / "phasor.npy", model_metadata(source_config))
+        save_snr_json(snr_year, run_dir / "snr.json", noise_budget=args.noise_budget)
+
+
+def main(argv=None) -> None:
+    """Run the end-to-end source-array signal, spectrum, and SNR calculation."""
+
+    args = parse_arguments(argv)
+
+    # A run directory is optional while legacy ``data/`` outputs remain the
+    # default. When requested, it captures enough artifacts to replay a small run.
+    run_dir = args.run_dir
+    if run_dir is not None:
+        run_dir = make_run_dir(run_dir.name, root=run_dir.parent)
+        configuration = RunConfig.from_environment().to_dict()
+        configuration["noise_budget"] = args.noise_budget
+        (run_dir / "config.json").write_text(
+            json.dumps(configuration, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+        )
+
+    source_array_input = args.source_array_input
+    if args.renew_source_array:
+        source_array_input = renew_source_array(
+            num_sources=args.source_array_num_sources,
+            chunk_size=args.source_array_chunk_size,
+            optimize_each_source=args.optimize_each_source,
+            chunk_center_approximation=(
+                args.optimize_each_source
+                and args.source_array_chunk_center_approximation
+            ),
+            output_format=args.source_array_format,
+            output_dir=run_dir,
+        )
+
+    if source_array_input is None:
+        source_array_input = choose_source_array_input()
+
+    args.source_array_input = source_array_input
+    print(
+        "SNR interpretation: ideal free-mass response with a conditional strain-noise calibration."
+    )
+    print(f"Noise budget: {args.noise_budget}; signal: complete array response (all derivative terms).")
+    if args.use_mono_approx:
+        _run_monochromatic(args, run_dir)
+        return
+
+    # Integrate spatial response once per source, sum phasors, then synthesize
+    # the shared time grid. No field integral depends on the sample count.
+    time_axis = build_time_axis()
+    h_values = calculate_source_array_signal_from_file(
+        time_axis,
+        source_array_input,
+        chunk_size=args.source_array_chunk_size,
+    )
+
+    # Keep the FFT normalization inherited from the original scripts. The saved
+    # arrays are consumed by both the compatibility SNR CLI and package APIs.
+    spectrum = calculate_spectrum(h_values)
+    magnitude_path = run_dir / "magnitude.npy" if run_dir else TOTAL_MAGNITUDE_FILE
+    freq_path = run_dir / "freqs.npy" if run_dir else TOTAL_FREQS_FILE
+    save_spectrum_arrays(spectrum, magnitude_path=magnitude_path, freq_path=freq_path)
+    if run_dir is not None:
+        np.save(run_dir / "signal.npy", h_values)
+        write_metadata(run_dir / "signal.npy", model_metadata())
+        save_spectrum_npz(spectrum, run_dir / "spectrum.npz")
+
+    # Reloading also checks that paired spectrum payloads and metadata agree.
+    snr_year = calculate_snr(magnitude_path, freq_path, noise_budget=args.noise_budget)
+    print(f"Calculated SNR (1 year) = {snr_year:.10e}")
+    if run_dir is not None:
+        save_snr_json(snr_year, run_dir / "snr.json", noise_budget=args.noise_budget)
+
+
+if __name__ == "__main__":
+    main()

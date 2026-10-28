@@ -26,6 +26,7 @@ from ghe.config import (
 )
 from ghe.signal import compute_phasor_sum
 from ghe.snr import calculate_snr_from_phasor
+from ghe.noise import NOISE_BUDGETS
 from ghe.source_array.generation import build_array_context, iter_source_chunks
 
 
@@ -65,6 +66,7 @@ def calculate_array_snr(
     generation_chunk_size: int,
     approximation_chunk_size: int,
     spacing: float | None,
+    noise_budget: str = "quantum",
 ) -> tuple[float, float]:
     """Generate one centered array and return its one-year SNR and phasor magnitude."""
 
@@ -91,6 +93,7 @@ def calculate_array_snr(
         phasor,
         source_config.gw_frequency_hz,
         detector_config=DetectorConfig().with_source(source_config),
+        noise_budget=noise_budget,
     )
     return snr, abs(phasor)
 
@@ -102,6 +105,7 @@ def sweep_array_snr(
     generation_chunk_size: int,
     approximation_chunk_size: int,
     spacing: float | None,
+    noise_budget: str = "quantum",
 ) -> list[dict[str, int | float]]:
     """Calculate numerical, ideal, and relative-deviation SNR values."""
 
@@ -116,6 +120,7 @@ def sweep_array_snr(
             generation_chunk_size=generation_chunk_size,
             approximation_chunk_size=approximation_chunk_size,
             spacing=spacing,
+            noise_budget=noise_budget,
         )
         if snr_1 is None:
             snr_1 = numerical_snr
@@ -166,7 +171,7 @@ def write_results(rows: list[dict[str, int | float]], output_path: Path) -> None
             )
 
 
-def parse_arguments() -> argparse.Namespace:
+def parse_arguments(argv=None) -> argparse.Namespace:
     source_array_defaults = SourceArrayConfig()
     parser = argparse.ArgumentParser(
         description="Sweep coherent-array size and quantify deviation from SNR proportional to N."
@@ -213,7 +218,11 @@ def parse_arguments() -> argparse.Namespace:
         default=DEFAULT_OUTPUT,
         help=f"Output CSV path. Default: {DEFAULT_OUTPUT}.",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--noise-budget", choices=NOISE_BUDGETS, default="quantum",
+        help="SNR noise PSD: quantum (default), or quantum + thermal + residual gas.",
+    )
+    args = parser.parse_args(argv)
     if args.generation_chunk_size < 1:
         parser.error("--generation-chunk-size must be positive.")
     if args.approximation_chunk_size < 1:
@@ -223,14 +232,15 @@ def parse_arguments() -> argparse.Namespace:
     return args
 
 
-def main() -> None:
-    args = parse_arguments()
+def main(argv=None) -> None:
+    args = parse_arguments(argv)
     rows = sweep_array_snr(
         args.array_sizes,
         strategy=args.strategy,
         generation_chunk_size=args.generation_chunk_size,
         approximation_chunk_size=args.approximation_chunk_size,
         spacing=args.spacing,
+        noise_budget=args.noise_budget,
     )
     write_results(rows, args.output)
     from dataclasses import asdict
@@ -245,6 +255,7 @@ def main() -> None:
             "spacing_m": args.spacing,
             "detector_config": asdict(DetectorConfig().with_source(SourceConfig())),
             "noise_config": asdict(NoiseConfig()),
+            "noise_budget": args.noise_budget,
             "interpretation": "conditional ideal strain-noise proxy",
         },
     )

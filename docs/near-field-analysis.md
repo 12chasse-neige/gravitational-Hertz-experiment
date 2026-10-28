@@ -2,7 +2,7 @@
 > underpin production. Its original diagnostic workflow and implementation
 > checklist and the 3995 m numerical defaults below are historical, preceding
 > the CE2 silicon switch. See [the integration review guide](production-integration-review.md)
-> and [current commands](current-workflows.md) for the active 40 km detector.
+> and [current commands](current-workflows.md) for the active YAML-driven detector.
 
 # Finite-distance rotor gravity and the interferometer response
 
